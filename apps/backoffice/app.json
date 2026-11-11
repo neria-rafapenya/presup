@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "Horekia Backoffice",
+    "slug": "horekia-backoffice",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "web": { "bundler": "metro" }
+  }
+}

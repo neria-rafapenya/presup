@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://horekia.local/schemas/quote.schema.json",
+  "title": "Horekia quote draft",
+  "type": "object",
+  "required": ["currency", "subtotal", "tax_amount", "total", "configuration_version", "lines"],
+  "properties": {
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "subtotal": { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$" },
+    "tax_amount": { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$" },
+    "total": { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$" },
+    "configuration_version": { "type": "integer", "minimum": 1 },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "quantity", "unit_price", "amount"],
+        "properties": {
+          "description": { "type": "string", "minLength": 1 },
+          "quantity": { "type": "string" },
+          "unit_price": { "type": "string" },
+          "amount": { "type": "string" },
+          "source_item_id": { "type": "string", "format": "uuid" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

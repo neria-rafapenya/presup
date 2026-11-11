@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://horekia.local/schemas/price-rule.schema.json",
+  "title": "Horekia deterministic price rule",
+  "type": "object",
+  "required": ["code", "kind", "priority", "definition"],
+  "properties": {
+    "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "kind": { "enum": ["unit_price", "factor", "surcharge", "minimum", "formula"] },
+    "priority": { "type": "integer", "minimum": 0 },
+    "definition": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

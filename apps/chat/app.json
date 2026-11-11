@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "Horekia Chat",
+    "slug": "horekia-chat",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "web": { "bundler": "metro" }
+  }
+}

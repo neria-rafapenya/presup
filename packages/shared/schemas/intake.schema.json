@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://horekia.local/schemas/intake.schema.json",
+  "title": "Horekia intake schema",
+  "type": "object",
+  "required": ["version", "fields"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "label", "type", "required"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+          "label": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["text", "number", "boolean", "choice", "date", "file"] },
+          "required": { "type": "boolean" },
+          "options": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
