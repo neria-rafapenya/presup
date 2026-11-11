@@ -58,6 +58,7 @@ type BlueprintField = { key: string; label: string; type: string; required: bool
 type BlueprintItem = { sku: string; name: string; description?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, unknown> };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
+type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "cleaning" | "gardening" | "photography" | "transport" | "it_support" | "consulting" | "training" | "maintenance";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
@@ -624,10 +625,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <Text style={styles.listMeta}>Los servicios nuevos empiezan sin preguntas, productos ni reglas. Añade solo los bloques que necesite tu negocio. Si te sirve, puedes cargar después una ayuda orientativa y editarla por completo.</Text>
             <View style={styles.templateChoices}>
               <Pressable style={styles.smallButton} onPress={() => { setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
-              <Text style={styles.templateHint}>Cargar ayuda:</Text>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: imprenta</Text></Pressable>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: reformas</Text></Pressable>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: taller</Text></Pressable>
+              <TemplateSelector onSelect={(template) => setDraftFromTemplate(template, setDraft, setRuleCards, setMeasuresText)} />
             </View>
             <Text style={styles.sectionLabel}>Preguntas y variables</Text>
             <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
@@ -672,7 +670,27 @@ function defaultRuleDefinition(kind: BlueprintRule["kind"]): Record<string, unkn
   return { item: "item_code", quantity: "quantity" };
 }
 
-function setDraftFromTemplate(template: "print" | "renovation" | "mechanic", setDraft: (blueprint: ServiceBlueprint) => void, setRuleCards: (rules: EditableRule[]) => void, setMeasuresText: (value: string) => void) {
+const SERVICE_TEMPLATE_OPTIONS: Array<{ id: ServiceTemplate; label: string; description: string }> = [
+  { id: "print", label: "Imprenta y rotulación", description: "Bolsas, libros, cartelería y otros trabajos impresos." },
+  { id: "renovation", label: "Reformas y obras", description: "Estancias, materiales, mediciones y mano de obra." },
+  { id: "mechanic", label: "Taller y reparación", description: "Averías, piezas, horas y fotografías." },
+  { id: "catering", label: "Catering y alimentación", description: "Comensales, menú, servicio y extras." },
+  { id: "cleaning", label: "Limpieza profesional", description: "Espacios, frecuencia, superficie y productos." },
+  { id: "gardening", label: "Jardinería y exteriores", description: "Superficie, tareas, retirada y mantenimiento." },
+  { id: "photography", label: "Fotografía y vídeo", description: "Tipo de sesión, duración, localización y entregables." },
+  { id: "transport", label: "Transporte y mudanzas", description: "Origen, destino, volumen, accesos y ayudantes." },
+  { id: "it_support", label: "Informática y soporte", description: "Equipo, incidencia, urgencia y horas técnicas." },
+  { id: "consulting", label: "Consultoría profesional", description: "Objetivo, alcance, sesiones y entregables." },
+  { id: "training", label: "Formación y clases", description: "Materia, asistentes, modalidad y duración." },
+  { id: "maintenance", label: "Mantenimiento de instalaciones", description: "Activo, periodicidad, materiales y desplazamiento." }
+];
+
+function TemplateSelector({ onSelect }: { onSelect: (template: ServiceTemplate) => void }) {
+  const [open, setOpen] = useState(false);
+  return <View style={styles.templateSelectorWrap}><Pressable style={styles.templateSelector} onPress={() => setOpen(!open)} accessibilityLabel="Seleccionar ayuda orientativa"><Text style={styles.templateSelectorLabel}>Cargar una ayuda orientativa</Text><Text style={styles.templateSelectorArrow}>{open ? "⌃" : "⌄"}</Text></Pressable>{open ? <View style={styles.templateMenu}>{SERVICE_TEMPLATE_OPTIONS.map((option) => <Pressable key={option.id} style={styles.templateOption} onPress={() => { onSelect(option.id); setOpen(false); }}><Text style={styles.templateOptionLabel}>{option.label}</Text><Text style={styles.templateOptionDescription}>{option.description}</Text></Pressable>)}</View> : null}</View>;
+}
+
+function setDraftFromTemplate(template: ServiceTemplate, setDraft: (blueprint: ServiceBlueprint) => void, setRuleCards: (rules: EditableRule[]) => void, setMeasuresText: (value: string) => void) {
   const blueprint = blueprintFor(template);
   setDraft(blueprint);
   setRuleCards(toEditableRules(blueprint.rules));
@@ -683,7 +701,11 @@ function exampleForType(type: string) {
   return { text: "un valor escrito", number: "250", choice: "una opción", boolean: "sí", date: "31/12/2026", file: "una imagen o PDF" }[type] ?? "un valor de ejemplo";
 }
 
-function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlueprint {
+function starterBlueprint(fields: BlueprintField[], items: BlueprintItem[], rules: BlueprintRule[] = []): ServiceBlueprint {
+  return { fields, items, rules, measures: [] };
+}
+
+function blueprintFor(template: ServiceTemplate): ServiceBlueprint {
   if (template === "renovation") return {
     fields: [
       { key: "room", label: "Estancia a reformar", type: "choice", required: true, options: ["baño", "cocina", "salón"], unit: undefined, example: "baño", help_text: "Selecciona el espacio principal de la reforma." },
@@ -713,6 +735,92 @@ function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlu
     rules: [{ code: "labor_by_hours", kind: "formula", priority: 10, definition: { quantity: "labor_hours", item: "labor-hour" } }],
     measures: []
   };
+  if (template === "catering") return starterBlueprint([
+    { key: "service_type", label: "Tipo de servicio", type: "choice", required: true, options: ["entrega", "cóctel", "comida sentada"], example: "cóctel" },
+    { key: "guests", label: "Número de comensales", type: "number", required: true, options: [], unit: "personas", min: 1, example: "80" },
+    { key: "menu", label: "Menú o propuesta", type: "text", required: true, options: [], example: "menú vegetariano" },
+    { key: "event_date", label: "Fecha del evento", type: "date", required: true, options: [], example: "15/06/2027" },
+    { key: "venue", label: "Lugar del evento", type: "text", required: true, options: [], example: "finca en Madrid" },
+    { key: "dietary_needs", label: "Alergias o necesidades alimentarias", type: "text", required: false, options: [], example: "3 menús sin gluten" }
+  ], [
+    { sku: "menu-person", name: "Menú por comensal", unit: "person", base_price: 28, currency: "EUR", metadata: { category: "producto" } },
+    { sku: "service-staff-hour", name: "Hora de servicio", unit: "hour", base_price: 32, currency: "EUR", metadata: { category: "mano de obra" } }
+  ], [{ code: "menu_by_guests", kind: "formula", priority: 10, definition: { quantity: "guests", item: "menu-person" } }]);
+  if (template === "cleaning") return starterBlueprint([
+    { key: "space_type", label: "Tipo de espacio", type: "choice", required: true, options: ["vivienda", "oficina", "local comercial"], example: "oficina" },
+    { key: "surface_m2", label: "Superficie aproximada", type: "number", required: true, options: [], unit: "m²", min: 1, example: "180" },
+    { key: "frequency", label: "Frecuencia", type: "choice", required: true, options: ["puntual", "semanal", "diaria"], example: "semanal" },
+    { key: "deep_cleaning", label: "¿Necesita limpieza profunda?", type: "boolean", required: true, options: [], example: "no" },
+    { key: "supplies", label: "¿Aporta la empresa los productos?", type: "boolean", required: true, options: [], example: "sí" }
+  ], [
+    { sku: "cleaning-m2", name: "Limpieza por m²", unit: "m²", base_price: 2.5, currency: "EUR", metadata: { category: "mano de obra" } },
+    { sku: "cleaning-supplies", name: "Productos de limpieza", unit: "job", base_price: 15, currency: "EUR", metadata: { category: "material" } }
+  ], [{ code: "cleaning_by_surface", kind: "formula", priority: 10, definition: { quantity: "surface_m2", item: "cleaning-m2" } }]);
+  if (template === "gardening") return starterBlueprint([
+    { key: "area_m2", label: "Superficie del jardín", type: "number", required: true, options: [], unit: "m²", min: 1, example: "250" },
+    { key: "task", label: "Trabajo necesario", type: "choice", required: true, options: ["mantenimiento", "poda", "diseño", "riego"], example: "poda" },
+    { key: "frequency", label: "Frecuencia del servicio", type: "choice", required: true, options: ["puntual", "quincenal", "mensual"], example: "mensual" },
+    { key: "green_waste", label: "¿Hay que retirar restos vegetales?", type: "boolean", required: true, options: [], example: "sí" },
+    { key: "access_notes", label: "Información sobre el acceso", type: "text", required: false, options: [], example: "acceso por garaje" }
+  ], [
+    { sku: "garden-maintenance", name: "Mantenimiento de jardín", unit: "m²", base_price: 1.8, currency: "EUR", metadata: { category: "mano de obra" } },
+    { sku: "green-waste", name: "Retirada de restos", unit: "job", base_price: 40, currency: "EUR", metadata: { category: "extra" } }
+  ], [{ code: "garden_by_area", kind: "formula", priority: 10, definition: { quantity: "area_m2", item: "garden-maintenance" } }]);
+  if (template === "photography") return starterBlueprint([
+    { key: "session_type", label: "Tipo de sesión", type: "choice", required: true, options: ["producto", "retrato", "evento", "inmobiliaria"], example: "producto" },
+    { key: "hours", label: "Duración de la sesión", type: "number", required: true, options: [], unit: "horas", min: 1, example: "4" },
+    { key: "location", label: "Localización", type: "text", required: true, options: [], example: "estudio del cliente" },
+    { key: "participants", label: "Número de personas", type: "number", required: false, options: [], unit: "personas", min: 1, example: "2" },
+    { key: "deliverables", label: "Entregables", type: "choice", required: true, options: ["galería digital", "álbum", "vídeo", "impresiones"], example: "galería digital" }
+  ], [
+    { sku: "photo-hour", name: "Hora de fotografía", unit: "hour", base_price: 80, currency: "EUR", metadata: { category: "servicio" } },
+    { sku: "photo-editing", name: "Edición y retoque", unit: "job", base_price: 120, currency: "EUR", metadata: { category: "extra" } }
+  ], [{ code: "photo_by_hours", kind: "formula", priority: 10, definition: { quantity: "hours", item: "photo-hour" } }]);
+  if (template === "transport") return starterBlueprint([
+    { key: "service_type", label: "Tipo de servicio", type: "choice", required: true, options: ["transporte", "mudanza", "reparto"], example: "mudanza" },
+    { key: "origin", label: "Dirección de origen", type: "text", required: true, options: [], example: "Madrid, calle Alcalá 20" },
+    { key: "destination", label: "Dirección de destino", type: "text", required: true, options: [], example: "Alcalá de Henares" },
+    { key: "volume_m3", label: "Volumen aproximado", type: "number", required: true, options: [], unit: "m³", min: 0.1, example: "12" },
+    { key: "elevator", label: "¿Hay ascensor disponible?", type: "boolean", required: true, options: [], example: "no" },
+    { key: "helpers", label: "Ayudantes necesarios", type: "number", required: false, options: [], unit: "personas", min: 0, example: "2" }
+  ], [
+    { sku: "transport-base", name: "Servicio base de transporte", unit: "job", base_price: 80, currency: "EUR", metadata: { category: "servicio" } },
+    { sku: "moving-helper", name: "Ayudante de mudanza", unit: "hour", base_price: 25, currency: "EUR", metadata: { category: "mano de obra" } }
+  ]);
+  if (template === "it_support") return starterBlueprint([
+    { key: "device", label: "Equipo o sistema", type: "text", required: true, options: [], example: "portátil Windows" },
+    { key: "issue", label: "Problema o tarea", type: "text", required: true, options: [], example: "no inicia" },
+    { key: "urgency", label: "Urgencia", type: "choice", required: true, options: ["normal", "prioritaria", "urgente"], example: "prioritaria" },
+    { key: "remote", label: "¿Se puede atender a distancia?", type: "boolean", required: true, options: [], example: "sí" },
+    { key: "hours", label: "Horas estimadas", type: "number", required: true, options: [], unit: "horas", min: 0.5, example: "2" }
+  ], [
+    { sku: "it-hour", name: "Hora de soporte técnico", unit: "hour", base_price: 55, currency: "EUR", metadata: { category: "mano de obra" } },
+    { sku: "it-visit", name: "Desplazamiento técnico", unit: "job", base_price: 35, currency: "EUR", metadata: { category: "extra" } }
+  ], [{ code: "support_by_hours", kind: "formula", priority: 10, definition: { quantity: "hours", item: "it-hour" } }]);
+  if (template === "consulting") return starterBlueprint([
+    { key: "area", label: "Área de consultoría", type: "choice", required: true, options: ["estrategia", "marketing", "procesos", "finanzas", "recursos humanos"], example: "procesos" },
+    { key: "objective", label: "Objetivo del proyecto", type: "text", required: true, options: [], example: "reducir tiempos de entrega" },
+    { key: "sessions", label: "Sesiones previstas", type: "number", required: true, options: [], unit: "sesiones", min: 1, example: "6" },
+    { key: "modality", label: "Modalidad", type: "choice", required: true, options: ["online", "presencial", "mixta"], example: "mixta" },
+    { key: "deliverable", label: "Entregable principal", type: "text", required: true, options: [], example: "plan de mejora" }
+  ], [{ sku: "consulting-session", name: "Sesión de consultoría", unit: "session", base_price: 150, currency: "EUR", metadata: { category: "servicio" } }], [{ code: "consulting_by_sessions", kind: "formula", priority: 10, definition: { quantity: "sessions", item: "consulting-session" } }]);
+  if (template === "training") return starterBlueprint([
+    { key: "topic", label: "Materia o curso", type: "text", required: true, options: [], example: "Excel para equipos" },
+    { key: "attendees", label: "Número de asistentes", type: "number", required: true, options: [], unit: "personas", min: 1, example: "12" },
+    { key: "modality", label: "Modalidad", type: "choice", required: true, options: ["presencial", "online", "híbrida"], example: "online" },
+    { key: "hours", label: "Duración", type: "number", required: true, options: [], unit: "horas", min: 1, example: "8" },
+    { key: "materials", label: "¿Incluye materiales?", type: "boolean", required: true, options: [], example: "sí" }
+  ], [{ sku: "training-hour", name: "Hora de formación", unit: "hour", base_price: 90, currency: "EUR", metadata: { category: "servicio" } }], [{ code: "training_by_hours", kind: "formula", priority: 10, definition: { quantity: "hours", item: "training-hour" } }]);
+  if (template === "maintenance") return starterBlueprint([
+    { key: "asset", label: "Instalación o equipo", type: "text", required: true, options: [], example: "climatización de oficina" },
+    { key: "task", label: "Tipo de trabajo", type: "choice", required: true, options: ["revisión", "reparación", "sustitución"], example: "revisión" },
+    { key: "frequency", label: "Periodicidad", type: "choice", required: true, options: ["puntual", "trimestral", "anual"], example: "trimestral" },
+    { key: "hours", label: "Horas estimadas", type: "number", required: true, options: [], unit: "horas", min: 0.5, example: "3" },
+    { key: "materials", label: "Materiales o piezas previstos", type: "text", required: false, options: [], example: "filtros y lubricante" }
+  ], [
+    { sku: "maintenance-hour", name: "Hora de mantenimiento", unit: "hour", base_price: 45, currency: "EUR", metadata: { category: "mano de obra" } },
+    { sku: "maintenance-visit", name: "Desplazamiento", unit: "job", base_price: 30, currency: "EUR", metadata: { category: "extra" } }
+  ], [{ code: "maintenance_by_hours", kind: "formula", priority: 10, definition: { quantity: "hours", item: "maintenance-hour" } }]);
   return {
     fields: [
       { key: "bag_type", label: "Tipo de bolsa", type: "choice", required: true, options: ["tote bag", "mochila", "saco" ], example: "tote bag" },
@@ -819,8 +927,15 @@ const styles = StyleSheet.create({
   designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   designerScroll: { maxHeight: 620 },
   designerRow: { flexDirection: "row", gap: 10, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 12, marginTop: 8 },
-  templateChoices: { flexDirection: "row", gap: 10, marginBottom: 10 },
-  templateHint: { color: "#718078", fontSize: 12, alignSelf: "center", marginTop: 8 },
+  templateChoices: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginBottom: 10 },
+  templateSelectorWrap: { position: "relative", zIndex: 10, minWidth: 300 },
+  templateSelector: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: "#f7fbf8", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  templateSelectorLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
+  templateSelectorArrow: { color: "#285246", fontSize: 18, lineHeight: 14, marginLeft: 14 },
+  templateMenu: { position: "absolute", top: 42, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, zIndex: 30 },
+  templateOption: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#edf1ee" },
+  templateOptionLabel: { color: "#17332d", fontSize: 12, fontWeight: "700" },
+  templateOptionDescription: { color: "#718078", fontSize: 11, lineHeight: 15, marginTop: 2 },
   blockPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
   paletteButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "#f7fbf8" },
   paletteLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
