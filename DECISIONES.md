@@ -9,6 +9,7 @@ Preparación incorporada y revisada en `/Users/rafa_penya/presup`. Se conserva e
 - Nombre comercial: Horekia. Repositorio: neria-rafapenya/presup.
 - Entrega llave en mano en servidores del cliente.
 - Backoffice para la empresa instalada: configuración, equipo, peticiones y presupuestos. Sin centro de tenants del proveedor ni superadministración comercial.
+- Onboarding del tenant mediante un Wizard reanudable: se activa automáticamente en el primer acceso mientras la configuración inicial esté incompleta y queda siempre disponible desde el menú `Wizard` para reanudarlo o volver a ejecutarlo.
 - tenant_id y RLS se conservan para aislamiento técnico. Una empresa inicial por instalación; dos empresas ficticias únicamente en pruebas de aislamiento.
 - Backend Python con FastAPI.
 - Frontends Expo y React Native Web, separados en backoffice y chat; paquetes frontend con yarn.

@@ -119,7 +119,8 @@ Objetivo: que la empresa configure y opere Horekia sin asistencia técnica habit
 
 Entregables:
 - Acceso, empresa, usuarios y roles dentro de la instalación.
-- Wizard reanudable: empresa, negocio, oferta, tarifas, reglas, fichas, asistente, simulación y canales.
+- Wizard reanudable y accesible desde el menú `Wizard`: se abre automáticamente en el primer acceso si el tenant no ha completado la configuración inicial y permite continuar o volver a ejecutar los pasos de empresa, negocio, oferta, tarifas, reglas, fichas, asistente, simulación y canales.
+- El estado del onboarding se guarda por tenant; abandonar el Wizard conserva el progreso y finalizarlo requiere confirmación antes de activar la configuración.
 - Edición manual completa de configuración; las propuestas de IA se muestran antes de guardar.
 - Bandeja, revisión de conversación y adjuntos, campos interpretados, edición de líneas y aprobación.
 - Pantallas de configuración, importaciones, consumo y métricas operativas.

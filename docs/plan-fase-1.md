@@ -41,3 +41,5 @@ Resumen de cambios, comandos probados, resultados de aislamiento, criterios pend
 ## Estado de esta implementación
 
 La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. La API y el bundle Web de backoffice arrancan y responden localmente sin Docker. Las migraciones se aplicaron a la base POC existente usando exclusivamente el espacio de nombres `horekia_*`; la prueba RLS con dos identidades de aplicación pasó. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md). Supabase Auth y Storage compartido quedan fuera de esta POC; Gemini queda configurado para uso real y se incorporará a los flujos que lo necesiten.
+
+El Wizard de onboarding pertenece al alcance de la Fase 5 de producto. La base actual deja preparada la configuración de empresa y catálogo, pero todavía no implementa la detección de primer acceso ni el flujo completo de pasos.
