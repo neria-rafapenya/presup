@@ -378,7 +378,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           {step < steps.length - 1 ? <Pressable style={styles.primaryButton} onPress={() => setStep(step + 1)}><Text style={styles.primaryLabel}>Continuar</Text></Pressable> : <Pressable style={styles.primaryButton} onPress={finish}><Text style={styles.primaryLabel}>Terminar configuración</Text></Pressable>}
         </View>
       </View>
-      <ServiceModal visible={serviceModalOpen} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
+      <ServiceModal visible={serviceModalOpen} services={services} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
       {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
@@ -557,17 +557,28 @@ function Services({ services, onCreate, onLoadBlueprint, onSaveBlueprint, saving
         <Text style={styles.panelTitle}>Servicios configurados</Text>
         {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
       </View>
-      <ServiceModal visible={modalVisible} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
+      <ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
       {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
 }
 
-function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
+function ServiceModal({ visible, services, onClose, onCreate, saving }: { visible: boolean; services: JobType[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
   const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "" });
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const slugExists = Boolean(draft.slug) && services.some((service) => service.slug === draft.slug);
   const submit = async () => {
+    if (!draft.name.trim()) {
+      setValidationError("Escribe un nombre para el servicio.");
+      return;
+    }
+    if (slugExists) {
+      setValidationError("Ya existe otro servicio con este nombre. Cambia el nombre para generar un slug distinto.");
+      return;
+    }
     if (await onCreate(draft)) {
       setDraft({ slug: "", name: "", description: "" });
+      setValidationError(null);
       onClose();
     }
   };
@@ -578,11 +589,12 @@ function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean
           <View style={styles.modalHeader}><Text style={styles.panelTitle}>Añadir servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
           <Text style={styles.wizardText}>Añádelo sin salir del contexto del Wizard o del catálogo.</Text>
           <View style={styles.formGrid}>
-            <Field label="Nombre" hint="Es el nombre visible del producto o servicio que quieres presupuestar." value={draft.name} onChangeText={(name) => setDraft({ ...draft, name, slug: slugify(name) })} />
+            <Field label="Nombre" hint="Es el nombre visible del producto o servicio que quieres presupuestar." value={draft.name} onChangeText={(name) => { const slug = slugify(name); setDraft({ ...draft, name, slug }); setValidationError(services.some((service) => service.slug === slug) ? "Ya existe otro servicio con este nombre. Cambia el nombre para generar un slug distinto." : null); }} />
             <Field label="Slug automático" hint="Identificador interno creado automáticamente a partir del nombre." value={draft.slug} editable={false} onChangeText={() => undefined} />
           </View>
           <Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />
-          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
+          {validationError ? <Text style={styles.error}>{validationError}</Text> : null}
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving || !draft.name.trim() || slugExists}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
         </View>
       </View>
     </Modal>
