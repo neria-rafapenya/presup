@@ -578,7 +578,7 @@ function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean
 
 function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, saving }: { visible: boolean; service: JobType; onClose: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
   const [draft, setDraft] = useState<ServiceBlueprint>(emptyBlueprint());
-  const [rulesText, setRulesText] = useState("[]");
+  const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
   const [designerError, setDesignerError] = useState<string | null>(null);
 
@@ -587,18 +587,24 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
       setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
-      setRulesText(JSON.stringify(blueprint.rules ?? [], null, 2));
+      setRuleCards(toEditableRules(blueprint.rules ?? []));
       setMeasuresText(JSON.stringify(blueprint.measures ?? [], null, 2));
     });
   }, [visible, service.id, onLoad]);
 
   const updateField = (index: number, patch: Partial<BlueprintField>) => setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
   const updateItem = (index: number, patch: Partial<BlueprintItem>) => setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
-  const addField = () => setDraft({ ...draft, fields: [...draft.fields, { key: `field_${draft.fields.length + 1}`, label: "Nueva pregunta", type: "text", required: true, options: [] }] });
-  const addItem = () => setDraft({ ...draft, items: [...draft.items, { sku: `item_${draft.items.length + 1}`, name: "Nuevo concepto", unit: "unit", currency: "EUR", metadata: {} }] });
+  const addField = (type = "text", label = "Nueva pregunta") => setDraft({ ...draft, fields: [...draft.fields, { key: `field_${draft.fields.length + 1}`, label, type, required: true, options: [] }] });
+  const removeField = (index: number) => setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) });
+  const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; const fields = [...draft.fields]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; setDraft({ ...draft, fields }); };
+  const addItem = (category = "producto") => setDraft({ ...draft, items: [...draft.items, { sku: `item_${draft.items.length + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] });
+  const removeItem = (index: number) => setDraft({ ...draft, items: draft.items.filter((_, itemIndex) => itemIndex !== index) });
+  const updateRule = (index: number, patch: Partial<EditableRule>) => setRuleCards(ruleCards.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule));
+  const addRule = (kind: BlueprintRule["kind"]) => setRuleCards([...ruleCards, editableRule({ code: `${kind}_rule_${ruleCards.length + 1}`, kind, priority: (ruleCards.length + 1) * 10, definition: defaultRuleDefinition(kind) })]);
+  const removeRule = (index: number) => setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index));
   const save = async () => {
     try {
-      const rules = JSON.parse(rulesText) as BlueprintRule[];
+      const rules = ruleCards.map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
       const measures = JSON.parse(measuresText) as Array<{ code: string; expression: Record<string, unknown> }>;
       if (!Array.isArray(rules) || !Array.isArray(measures)) throw new Error("Las reglas deben ser listas JSON");
       if (await onSave(service.id, { ...draft, rules, measures })) onClose();
@@ -617,19 +623,21 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <Text style={styles.sectionLabel}>Plantilla inicial</Text>
             <Text style={styles.listMeta}>Carga una estructura orientativa y personalízala para este negocio.</Text>
             <View style={styles.templateChoices}>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRulesText, setMeasuresText)}><Text style={styles.smallButtonLabel}>Imprenta</Text></Pressable>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRulesText, setMeasuresText)}><Text style={styles.smallButtonLabel}>Reformas</Text></Pressable>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRulesText, setMeasuresText)}><Text style={styles.smallButtonLabel}>Taller</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Imprenta</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Reformas</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Taller</Text></Pressable>
             </View>
             <Text style={styles.sectionLabel}>Preguntas y variables</Text>
-            {draft.fields.map((field, index) => <View style={styles.designerRow} key={`${field.key}-${index}`}><Field label="Código" value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta" value={field.label} onChangeText={(label) => updateField(index, { label })} /><Field label="Tipo" value={field.type} onChangeText={(type) => updateField(index, { type })} /><Toggle label="Obligatoria" value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>)}
-            <Pressable style={styles.secondaryButton} onPress={addField}><Text style={styles.secondaryLabel}>Añadir pregunta</Text></Pressable>
+            <Text style={styles.listMeta}>Añade bloques de la biblioteca y ordénalos con las flechas. Cada bloque se convierte en una pregunta del chatbot.</Text>
+            <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
+            {draft.fields.map((field, index) => <View style={styles.blockCard} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código" value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta" value={field.label} onChangeText={(label) => updateField(index, { label })} /><Field label="Tipo" value={field.type} onChangeText={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}><Field label="Opciones separadas por coma" value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /><Field label="Unidad" value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /><Toggle label="Obligatoria" value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View></View>)}
             <Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
-            {draft.items.map((item, index) => <View style={styles.designerRow} key={`${item.sku}-${index}`}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View>)}
-            <Pressable style={styles.secondaryButton} onPress={addItem}><Text style={styles.secondaryLabel}>Añadir concepto</Text></Pressable>
-            <Text style={styles.sectionLabel}>Reglas deterministas (JSON)</Text>
+            <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
+            {draft.items.map((item, index) => <View style={styles.blockCard} key={`${item.sku}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View></View>)}
+            <Text style={styles.sectionLabel}>Reglas deterministas</Text>
             <Text style={styles.listMeta}>El LLM propone datos; estas reglas son las que podrán calcular el importe.</Text>
-            <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={rulesText} onChangeText={setRulesText} multiline />
+            <View style={styles.blockPalette}>{[["Mínimo", "minimum"], ["Descuento", "factor"], ["Recargo", "surcharge"], ["Fórmula", "formula"]].map(([label, kind]) => <Pressable style={styles.paletteButton} key={kind} onPress={() => addRule(kind as BlueprintRule["kind"])}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
+            {ruleCards.map((rule, index) => <View style={styles.blockCard} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{rule.code || "Regla sin código"}</Text><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><Text style={styles.fieldLabel}>Detalle de la regla</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></View>)}
             <Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text>
             <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={setMeasuresText} multiline />
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
@@ -645,10 +653,27 @@ function emptyBlueprint(): ServiceBlueprint {
   return { fields: [], items: [], rules: [], measures: [] };
 }
 
-function setDraftFromTemplate(template: "print" | "renovation" | "mechanic", setDraft: (blueprint: ServiceBlueprint) => void, setRulesText: (value: string) => void, setMeasuresText: (value: string) => void) {
+type EditableRule = BlueprintRule & { definitionText: string };
+
+function editableRule(rule: BlueprintRule): EditableRule {
+  return { ...rule, definitionText: JSON.stringify(rule.definition, null, 2) };
+}
+
+function toEditableRules(rules: BlueprintRule[]): EditableRule[] {
+  return rules.map(editableRule);
+}
+
+function defaultRuleDefinition(kind: BlueprintRule["kind"]): Record<string, unknown> {
+  if (kind === "minimum") return { field: "quantity", minimum: 1 };
+  if (kind === "factor") return { field: "quantity", tiers: [{ gte: 500, factor: 0.92 }] };
+  if (kind === "surcharge") return { when: {}, amount: 0 };
+  return { item: "item_code", quantity: "quantity" };
+}
+
+function setDraftFromTemplate(template: "print" | "renovation" | "mechanic", setDraft: (blueprint: ServiceBlueprint) => void, setRuleCards: (rules: EditableRule[]) => void, setMeasuresText: (value: string) => void) {
   const blueprint = blueprintFor(template);
   setDraft(blueprint);
-  setRulesText(JSON.stringify(blueprint.rules, null, 2));
+  setRuleCards(toEditableRules(blueprint.rules));
   setMeasuresText(JSON.stringify(blueprint.measures, null, 2));
 }
 
@@ -776,6 +801,16 @@ const styles = StyleSheet.create({
   designerScroll: { maxHeight: 620 },
   designerRow: { flexDirection: "row", gap: 10, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 12, marginTop: 8 },
   templateChoices: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  blockPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
+  paletteButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "#f7fbf8" },
+  paletteLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
+  blockCard: { borderWidth: 1, borderColor: "#dbe6df", borderRadius: 10, padding: 14, marginTop: 10, backgroundColor: "#fbfdfb" },
+  blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  blockIndex: { color: "#258269", fontSize: 12, fontWeight: "800", width: 22 },
+  blockTitle: { color: "#17332d", fontSize: 14, fontWeight: "700", flex: 1 },
+  reorderLabel: { color: "#285246", fontSize: 18, fontWeight: "800", paddingHorizontal: 4 },
+  deleteLabel: { color: "#a53d35", fontSize: 12, fontWeight: "700", paddingHorizontal: 4 },
+  ruleDetailInput: { minHeight: 72, fontFamily: "monospace", fontSize: 12 },
   codeInput: { fontFamily: "monospace", fontSize: 12 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   modalClose: { color: "#52645b", fontSize: 28, lineHeight: 28, paddingHorizontal: 6 },
