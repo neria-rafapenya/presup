@@ -342,7 +342,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
         {step === 1 ? (
           <>
             <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
-            <Text style={styles.wizardText}>Define qué vende o qué trabajos realiza tu empresa. Los servicios se añaden aquí sin abandonar el Wizard.</Text>
+            <Text style={styles.wizardText}>Define aquí los productos o servicios que tu empresa quiere presupuestar. Si tienes una imprenta, una empresa de reformas o un taller mecánico, crea cada tipo de trabajo que ofreces y después configura sus preguntas, opciones y precios. Así la IA tendrá el contexto necesario para entender la petición, pedir los datos que falten y responder con un presupuesto conciso.</Text>
             {services.slice(0, 3).map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
             <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
           </>
