@@ -604,7 +604,7 @@ function Services({ services, onCreate, onDelete, onLoadBlueprint, onSaveBluepri
 
 function TutorialVideo() {
   if (Platform.OS !== "web") return <Text style={styles.listMeta}>El tutorial visual está disponible en la versión web del backoffice.</Text>;
-  return <View style={styles.tutorialBox}><Text style={styles.tutorialTitle}>¿Cómo crear un servicio?</Text><Text style={styles.listMeta}>Mira este ejemplo de catering y adapta los pasos a tu negocio.</Text>{createElement("video", { controls: true, playsInline: true, preload: "metadata", src: "/tutorial-crear-servicio-catering.mp4", style: styles.tutorialVideo, "aria-label": "Tutorial visual para crear un servicio de catering" })}</View>;
+  return <View style={styles.tutorialBox}><Text style={styles.tutorialTitle}>¿Cómo crear un servicio?</Text><Text style={styles.listMeta}>Mira este ejemplo de catering y adapta los pasos a tu negocio.</Text>{createElement("video", { controls: true, playsInline: true, preload: "metadata", src: "/tutorial-crear-servicio-catering.mp4?v=4", style: styles.tutorialVideo, "aria-label": "Tutorial visual para crear un servicio de catering" })}</View>;
 }
 
 function DeleteServiceModal({ service, onClose, onConfirm, saving }: { service: JobType | null; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean }) {
