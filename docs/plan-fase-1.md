@@ -6,7 +6,7 @@ Entregar monorepo, base FastAPI, esquemas y migraciones reproducibles para una e
 
 ## Secuencia
 
-Requisitos comprobados al incorporar la preparación: crear y registrar la rama de fase desde una sesión con escritura en `.git`, arrancar el daemon de Docker e instalar o habilitar Supabase CLI. Actualmente no hay aplicación ni migraciones; la validación local de Supabase no se puede ejecutar todavía. No sustituir estas comprobaciones por operaciones sobre una base remota.
+Requisitos comprobados al incorporar la preparación: la rama `fase-0/preparacion` quedó registrada en `37b1150` y la rama de trabajo `fase-1/base` ya existe. Por decisión operativa no se usa Docker ni Supabase local en este macOS. Supabase CLI 3.1.0 está disponible para tareas controladas, pero la validación de migraciones se hará en CI o en una base desechable explícitamente autorizada; no se usará una base remota de producción.
 
 1. Usar el contrato de configuración creado en Fase 0 y completar los valores Supabase cuando se vaya a validar la conexión. Fijar versiones compatibles de Python y Node/Expo y documentar herramientas requeridas. No introducir variables sin avisar y solicitar su incorporación cuando sean necesarias.
 2. Crear apps/backoffice y apps/chat con Expo; services/api con FastAPI; packages/shared con JSON Schema; directorios supabase, infra y docs. Configurar yarn y archivos de bloqueo.
@@ -14,7 +14,7 @@ Requisitos comprobados al incorporar la preparación: crear y registrar la rama 
 4. Definir fichas, reglas, procedencia de valores y representación monetaria. Diseñar orden de reglas y versiones de configuración, sin implementar todavía el motor.
 5. Crear migraciones por dependencias: empresa y miembros; configuración y catálogo; peticiones y conversaciones; presupuestos e historial; importaciones, correcciones, consumo y recuperación.
 6. Añadir RLS por empresa y rol; evitar claves foráneas que permitan cruces de tenant; políticas de Storage. Acceso público de chat mediante backend, sin lectura anónima general de tablas.
-7. Preparar datos ficticios mínimos y pruebas de aislamiento. No cargar tarifas reales ni activar Gemini.
+7. Preparar datos ficticios mínimos y pruebas de aislamiento para ejecutarlas en CI o en una base desechable autorizada. No cargar tarifas reales ni activar Gemini.
 8. Documentar tablas, relaciones, inicialización de una única empresa y comandos exactos de validación. Actualizar README.
 
 ## Modelo mínimo
@@ -37,3 +37,7 @@ Los comandos ejecutables se añadirán con la implementación; este plan no afir
 ## Cierre
 
 Resumen de cambios, comandos probados, resultados de aislamiento, criterios pendientes y validación del usuario antes de iniciar Fase 2.
+
+## Estado de esta implementación
+
+La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. El cierre sigue pendiente: Docker no tiene daemon disponible y Supabase CLI no está en PATH, por lo que aún no se han ejecutado las migraciones, las pruebas RLS, los builds de las apps ni el arranque del compose. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md).

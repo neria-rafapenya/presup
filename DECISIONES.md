@@ -19,11 +19,12 @@ Preparación incorporada y revisada en `/Users/rafa_penya/presup`. Se conserva e
 - Español inicial, estructura preparada para catalán.
 - Una fase por rama, commits pequeños y validación al cerrar cada fase.
 - No desplegar, crear servicios remotos ni consumir IA real durante la preparación.
+- No usar Docker ni Supabase local en este macOS durante el desarrollo; Docker Compose queda como artefacto de entrega y validación en CI o en un entorno controlado.
 
 ## Pendientes y condición de resolución
 
-- Crear la rama de Fase 0 y registrar la preparación desde una sesión con escritura en `.git`; en esta sesión `git switch -c fase-0/preparacion` falla al crear la referencia. No se omite la separación de fases por rama.
-- Arrancar Docker y disponer de Supabase CLI antes de validar la base local y las migraciones de Fase 1. No se han creado servicios externos como alternativa.
+- Rama de Fase 0 creada y registrada como `fase-0/preparacion`, commit `37b1150` (`docs: preparar Horekia y verificar fase 0`). La rama de trabajo de Fase 1 es `fase-1/base`.
+- Validar migraciones y aislamiento en una base desechable de CI o en un entorno Supabase explícitamente autorizado. Supabase CLI 3.1.0 está instalado, pero no se usará para levantar contenedores en este equipo.
 
 - El usuario confirma que no existe un .env previo y autoriza su creación. Se crean .env local y .env.example con el mismo contrato, credenciales vacías y AI_MOCK=true.
 - Variables iniciales: AI_MOCK, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL, GEMINI_API_KEY, GEMINI_MODEL, GEMINI_EMBEDDING_MODEL, EXPO_PUBLIC_API_URL, EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY.

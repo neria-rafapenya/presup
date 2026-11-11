@@ -6,14 +6,14 @@ Fecha: 11 de noviembre de 2026.
 
 | Comprobación | Resultado |
 | --- | --- |
-| Repositorio local | `/Users/rafa_penya/presup`, rama `main`, commit inicial `f9b793a`; origin apunta a neria-rafapenya/presup |
+| Repositorio local | `/Users/rafa_penya/presup`, commit inicial `f9b793a`; origin apunta a neria-rafapenya/presup |
 | Preparación de origen | `/Users/rafa_penya/Documents/Codex/2026-11-11/new-chat-2/presup`; ocho archivos incorporados, sin copiar `.git` |
 | Cambios previos del destino | README versionado con título `presup`, sin modificaciones; `.DS_Store` sin seguimiento. Ambos se conservan; README fusionado y `.DS_Store` excluido |
 | .env del proyecto | Copiado al no existir en el destino, con permisos privados, credenciales vacías y AI_MOCK=true; contenido no mostrado |
 | DECISIONES.md | Incorporado y revisado: FastAPI, backoffice de la empresa cliente y entrega llave en mano |
 | Instrucciones | Se aplican las instrucciones AGENTS.md aportadas en la conversación |
 | Historial Git | Se conserva el del destino; no se consulta ni publica el estado remoto |
-| Rama de Fase 0 | Intento de `git switch -c fase-0/preparacion` rechazado al escribir en `.git`; árbol de trabajo en `main`, sin commit |
+| Rama de Fase 0 | `fase-0/preparacion`, commit `37b1150` (`docs: preparar Horekia y verificar fase 0`); rama de Fase 1 creada como `fase-1/base` |
 | Git | 2.48.1 |
 | Python instalado | 3.13.14 |
 | Node instalado | 25.2.1 |
@@ -59,7 +59,7 @@ También se compara localmente el contrato de once variables entre `.env` y `.en
 - [x] Completar .env.example con las variables iniciales y valores locales no secretos.
 - [x] Incorporar preparación sin sobrescribir cambios existentes ni copiar su `.git`.
 - [x] Revisar exclusión del `.env`, contrato de variables y enlaces de documentación.
-- [ ] Crear y registrar la rama de fase desde una sesión con escritura en `.git`.
+- [x] Crear y registrar la rama de fase desde una sesión con escritura en `.git`.
 - [ ] Sincronizar con GitHub cuando corresponda; no se ha comprobado disponibilidad de push.
 
-Estado: preparación documental y configuración de Fase 0 comprobadas localmente. El cierre en Git queda pendiente por permisos sobre `.git`. Antes de implementar Fase 1, registrar esta preparación en su rama; para validar sus migraciones locales, disponer además de Docker activo y Supabase CLI. Las credenciales Supabase vacías siguen siendo un pendiente explícito; no hay aplicación ejecutable ni pruebas de aislamiento superadas.
+Estado: Fase 0 cerrada documentalmente y registrada en `37b1150`; la rama `fase-1/base` está preparada para la implementación. Para validar las migraciones locales de Fase 1 siguen siendo necesarios Docker activo y Supabase CLI. Las credenciales Supabase vacías siguen siendo correctas para el modo simulado; no se han usado recursos remotos.

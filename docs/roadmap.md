@@ -1,7 +1,7 @@
 # Horekia — Roadmap de producto y desarrollo
 
 Fecha: 11 de noviembre de 2026.
-Estado: planificación; implementación pendiente.
+Estado: Fase 1 en implementación; migraciones y servicios aún pendientes de validación local.
 Base: PROMPT_CODEX_presup.md, ajustado a las decisiones confirmadas en esta conversación.
 
 ## 1. Producto y modelo de entrega
