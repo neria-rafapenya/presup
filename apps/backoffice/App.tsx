@@ -737,8 +737,13 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       const rules = ruleCards.map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
       const measures = JSON.parse(measuresText) as Array<{ code: string; expression: Record<string, unknown> }>;
       if (!Array.isArray(rules) || !Array.isArray(measures)) throw new Error("Las reglas deben ser listas JSON");
-      if (await onSave(service.id, { ...draft, rules, measures })) onClose();
-      setDesignerError(null);
+      const saved = await onSave(service.id, { ...draft, rules, measures });
+      if (saved) {
+        setDesignerError(null);
+        onClose();
+      } else {
+        setDesignerError("No se ha podido guardar el patrón. Revisa la conexión con la API e inténtalo de nuevo.");
+      }
     } catch (error) {
       setDesignerError(error instanceof Error ? error.message : "JSON de reglas no válido");
     }
