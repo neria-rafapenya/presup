@@ -1,0 +1,12 @@
+-- Esqueleto reproducible para Supabase local.
+-- Completar con dos user_id creados en Auth antes de ejecutarlo.
+-- No usar service_role en estas comprobaciones: debe respetarse RLS.
+--
+-- \set user_one '...'
+-- \set user_two '...'
+-- set role authenticated;
+-- select set_config('request.jwt.claim.sub', :'user_one', true);
+-- select set_config('request.jwt.claim.role', 'authenticated', true);
+-- select count(*) from public.job_types
+--   where tenant_id = '00000000-0000-0000-0000-000000000001';
+-- La lectura del tenant 2 debe devolver cero y un insert con tenant 2 debe ser rechazado.
