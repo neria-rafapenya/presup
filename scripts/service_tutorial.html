@@ -4,51 +4,35 @@
   <meta charset="utf-8" />
   <title>Horekia · Crear un servicio</title>
   <style>
-    :root { --ink:#17332d; --muted:#61736a; --green:#258269; --pale:#e8f4ed; --line:#dbe6df; --paper:#ffffff; --bg:#f4f7f5; --yellow:#fff2b8; }
+    :root { --ink:#17332d; --muted:#52645b; --green:#258269; --soft:#e8f4ed; --line:#dbe6df; }
     * { box-sizing:border-box; }
-    html, body { margin:0; width:1280px; height:720px; overflow:hidden; font-family:Arial, sans-serif; color:var(--ink); background:var(--bg); }
+    html, body { margin:0; width:1280px; height:720px; overflow:hidden; font-family:Arial,sans-serif; background:#f4f7f5; color:var(--ink); }
     body { display:flex; align-items:center; justify-content:center; }
-    .scene { width:1280px; height:720px; padding:58px 72px; position:relative; background:linear-gradient(135deg,#f6faf7,#e8f4ed); }
-    .brand { font-size:18px; letter-spacing:4px; font-weight:800; color:var(--green); }
-    .eyebrow { margin-top:82px; font-size:16px; letter-spacing:3px; font-weight:800; color:var(--green); }
-    h1 { max-width:900px; font-size:58px; line-height:1.04; margin:20px 0 20px; letter-spacing:-1px; }
-    h2 { font-size:34px; margin:0 0 12px; }
-    .lead { color:var(--muted); font-size:23px; line-height:1.42; max-width:870px; }
-    .footer { position:absolute; left:72px; bottom:44px; color:var(--muted); font-size:16px; }
-    .step { position:absolute; right:72px; top:60px; color:var(--muted); font-size:16px; }
-    .workspace { margin-top:68px; display:grid; grid-template-columns:220px 1fr; gap:24px; }
-    .side { background:var(--ink); border-radius:14px; min-height:492px; padding:28px 22px; color:#d7e6dc; }
-    .side strong { color:#fff; letter-spacing:3px; }
-    .nav { margin-top:54px; display:grid; gap:22px; font-size:17px; }
-    .nav .active { color:#fff; background:#28604d; padding:12px 13px; border-radius:8px; margin:0 -13px; }
-    .panel { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:34px 38px; min-height:492px; }
-    .hint { color:var(--muted); font-size:18px; margin-bottom:28px; }
-    .input { border:1px solid #cbd8d1; border-radius:8px; background:#fbfcfb; padding:16px 18px; margin-bottom:16px; }
-    .label { color:var(--muted); font-size:14px; font-weight:700; margin-bottom:7px; }
-    .value { font-size:22px; }
-    .readonly { color:#718078; background:#f1f4f2; }
-    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    .card { border:1px solid var(--line); border-radius:10px; padding:17px 20px; margin:12px 0; display:flex; justify-content:space-between; align-items:center; }
-    .card strong { font-size:19px; }
-    .meta { color:var(--muted); font-size:15px; margin-top:6px; }
-    .pill { background:#f0f7f2; color:var(--green); border-radius:18px; padding:8px 13px; font-weight:700; font-size:14px; }
-    .rule { background:var(--ink); color:#e7f2e9; border-radius:10px; padding:24px 28px; font-family:monospace; font-size:20px; line-height:1.8; }
-    .rule .accent { color:#8fc6a9; }
-    .chat { border:1px solid #b7c8be; background:#fff; border-radius:12px; padding:24px 28px; margin-top:34px; font-size:24px; line-height:1.55; }
-    .chat .reply { color:var(--green); margin-top:15px; font-size:19px; }
-    .cover-mark { width:100px; height:100px; border-radius:28px; background:var(--ink); color:#fff; display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:800; margin-top:110px; }
+    .scene { width:1280px; height:720px; padding:40px 56px; position:relative; background:linear-gradient(135deg,#f8fbf9,#e8f4ed); }
+    .top { display:flex; justify-content:space-between; align-items:center; }
+    .brand { color:var(--green); font-size:18px; letter-spacing:4px; font-weight:800; }
+    .count { color:var(--muted); font-size:16px; font-weight:700; }
+    .instruction { margin-top:30px; background:var(--ink); border-radius:14px; padding:24px 30px; color:#fff; font-size:30px; line-height:1.2; font-weight:800; box-shadow:0 8px 20px rgba(23,51,45,.12); }
+    .sub { color:var(--muted); font-size:17px; margin-top:12px; }
+    .shot { position:absolute; left:56px; right:56px; top:230px; bottom:34px; border:1px solid var(--line); background:#fff; border-radius:14px; display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:0 12px 30px rgba(23,51,45,.10); }
+    .shot img { display:block; max-width:100%; max-height:100%; object-fit:contain; }
+    .shot.one img { width:850px; }
+    .shot.two img { width:1110px; }
+    .shot.three img { width:1080px; height:100%; object-fit:contain; object-position:center; }
+    .callout { position:absolute; background:#fff2b8; color:#5b4b16; border:2px solid #e4c85e; border-radius:10px; padding:10px 15px; font-size:16px; font-weight:800; box-shadow:0 5px 12px rgba(91,75,22,.15); }
+    .callout.one { right:136px; top:300px; }
+    .callout.two { right:126px; top:295px; }
+    .callout.three { right:92px; top:282px; }
+    .footer { position:absolute; left:56px; bottom:10px; color:var(--muted); font-size:13px; }
   </style>
 </head>
 <body>
   <main id="app"></main>
   <script>
     const scenes = [
-      { html: `<div class="scene"><div class="brand">HOREKIA · BACKOFFICE</div><div class="cover-mark">H</div><div class="eyebrow">TUTORIAL VISUAL</div><h1>Cómo crear un servicio de presupuesto</h1><div class="lead">Ejemplo: configurar un servicio de catering para que la IA entienda las peticiones y pueda preparar presupuestos.</div><div class="footer">Sin voz · Solo textos ilustrativos · Datos ficticios</div><div class="step">1 / 6</div></div>` },
-      { html: `<div class="scene"><div class="brand">HOREKIA · WIZARD</div><div class="workspace"><aside class="side"><strong>WIZARD</strong><div class="nav"><span>1 · Empresa</span><span class="active">2 · Oferta</span><span>3 · Conocimiento</span><span>4 · Revisar</span></div></aside><section class="panel"><h2>1. Crea el servicio</h2><div class="hint">Empieza en blanco y escribe el producto o trabajo que quieres presupuestar.</div><div class="grid2"><div class="input"><div class="label">Nombre</div><div class="value">Catering para eventos</div></div><div class="input readonly"><div class="label">Slug automático</div><div class="value">catering-para-eventos</div></div></div><div class="input"><div class="label">Descripción</div><div class="value">Menús y servicio para celebraciones</div></div><div class="pill">El identificador técnico se crea solo</div></section></div><div class="footer">El nombre es lo que verá el equipo. No necesitas escribir códigos técnicos.</div><div class="step">2 / 6</div></div>` },
-      { html: `<div class="scene"><div class="brand">HOREKIA · DISEÑAR SERVICIO</div><div class="workspace"><aside class="side"><strong>CATERING</strong><div class="nav"><span class="active">Preguntas</span><span>Catálogo</span><span>Reglas</span></div></aside><section class="panel"><h2>2. Añade preguntas</h2><div class="hint">La IA usará estas respuestas para completar el presupuesto.</div><div class="card"><div><strong>Número de comensales</strong><div class="meta">Ejemplo: 80 personas · Obligatorio</div></div><span class="pill">Número</span></div><div class="card"><div><strong>Tipo de servicio</strong><div class="meta">Entrega · Cóctel · Comida sentada</div></div><span class="pill">Opción</span></div><div class="card"><div><strong>Fecha del evento</strong><div class="meta">Ejemplo: 15/06/2027</div></div><span class="pill">Fecha</span></div><div class="pill">El código interno se genera automáticamente y queda oculto</div></section></div><div class="footer">Añade solo lo que la IA necesite preguntar.</div><div class="step">3 / 6</div></div>` },
-      { html: `<div class="scene"><div class="brand">HOREKIA · DISEÑAR SERVICIO</div><div class="workspace"><aside class="side"><strong>CATERING</strong><div class="nav"><span>Preguntas</span><span class="active">Catálogo</span><span>Reglas</span></div></aside><section class="panel"><h2>3. Añade el catálogo</h2><div class="hint">Aquí defines los importes que el motor determinista puede calcular.</div><div class="card"><div><strong>Menú por comensal</strong><div class="meta">Precio base · 28,00 €</div></div><span class="pill">por persona</span></div><div class="card"><div><strong>Hora de servicio</strong><div class="meta">Precio base · 32,00 €</div></div><span class="pill">por hora</span></div><div class="card"><div><strong>Transporte</strong><div class="meta">Precio base · 50,00 €</div></div><span class="pill">servicio</span></div></section></div><div class="footer">La IA propone datos; el motor calcula con estos precios.</div><div class="step">4 / 6</div></div>` },
-      { html: `<div class="scene"><div class="brand">HOREKIA · DISEÑAR SERVICIO</div><div class="workspace"><aside class="side"><strong>CATERING</strong><div class="nav"><span>Preguntas</span><span>Catálogo</span><span class="active">Reglas</span></div></aside><section class="panel"><h2>4. Añade una regla</h2><div class="hint">Las reglas convierten las respuestas en líneas de presupuesto.</div><div class="rule">SI <span class="accent">comensales</span> ≥ 50<br>ENTONCES aplicar <span class="accent">servicio de personal</span><br>CANTIDAD = <span class="accent">número de comensales</span></div><div class="pill" style="display:inline-block;margin-top:24px">Puedes empezar cargando una ayuda y editarla</div></section></div><div class="footer">Las reglas son deterministas y trazables.</div><div class="step">5 / 6</div></div>` },
-      { html: `<div class="scene"><div class="brand">HOREKIA · RESULTADO</div><div class="eyebrow">PATRÓN CONFIGURADO</div><h1>La IA ya tiene contexto</h1><div class="lead">Puede entender una petición, detectar qué falta y dejar el cálculo en manos de las reglas.</div><div class="chat"><strong>Cliente:</strong> Quiero catering para 80 personas, tipo cóctel.<div class="reply"><strong>IA:</strong> Perfecto. ¿Para qué fecha es el evento y dónde se celebrará? Con esos datos prepararé el presupuesto.</div></div><div class="footer">Configura · Comprueba · Guarda</div><div class="step">6 / 6</div></div>` }
+      { html: `<div class="scene"><div class="top"><div class="brand">HOREKIA · SERVICIOS</div><div class="count">1 / 3</div></div><div class="instruction">Pulsa «Crear un servicio», ponle un nombre y una descripción.</div><div class="sub">El slug se genera automáticamente: no tienes que escribirlo.</div><div class="shot one"><img src="video-assets/story-1-add-service.png" /></div><div class="callout one">1 · Nombre y descripción</div><div class="footer">Tutorial visual · Datos ficticios · Sin voz</div></div>` },
+      { html: `<div class="scene"><div class="top"><div class="brand">HOREKIA · SERVICIOS</div><div class="count">2 / 3</div></div><div class="instruction">Abre el servicio creado pulsando «Diseñar».</div><div class="sub">Desde aquí podrás configurar cómo se presupuesta ese producto o trabajo.</div><div class="shot two"><img src="video-assets/story-2-design-button.png" /></div><div class="callout two">2 · Pulsa Diseñar</div><div class="footer">Tutorial visual · Datos ficticios · Sin voz</div></div>` },
+      { html: `<div class="scene"><div class="top"><div class="brand">HOREKIA · DISEÑAR SERVICIO</div><div class="count">3 / 3</div></div><div class="instruction">Escoge los elementos para tu negocio. Puedes usar el selector de plantilla como ayuda.</div><div class="sub">Añade preguntas, conceptos de catálogo y reglas deterministas.</div><div class="shot three"><img src="video-assets/story-3-service-designer.png" /></div><div class="callout three">3 · Elige y personaliza</div><div class="footer">Tutorial visual · Datos ficticios · Sin voz</div></div>` }
     ];
     const scene = Number(new URLSearchParams(location.search).get('scene') || 0);
     document.getElementById('app').innerHTML = scenes[Math.max(0, Math.min(scene, scenes.length - 1))].html;
