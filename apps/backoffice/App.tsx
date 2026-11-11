@@ -631,6 +631,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
   const [designerError, setDesignerError] = useState<string | null>(null);
+  const [designerLoading, setDesignerLoading] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const designerScrollRef = useRef<ScrollView>(null);
   const fieldPositions = useRef<Record<number, number>>({});
@@ -639,12 +640,19 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
   useEffect(() => {
     if (!visible) return;
+    let active = true;
+    setDesignerLoading(true);
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
       setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
       setRuleCards(toEditableRules(blueprint.rules ?? []));
       setMeasuresText(JSON.stringify(blueprint.measures ?? [], null, 2));
+    }).catch(() => undefined).finally(() => {
+      if (active) setDesignerLoading(false);
     });
+    return () => {
+      active = false;
+    };
   }, [visible, service.id, onLoad]);
 
   useEffect(() => {
@@ -712,6 +720,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
           </ScrollView>
           <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void save()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar patrón"}</Text></Pressable></View>
+          {designerLoading ? <View style={styles.designerLoadingOverlay}><ActivityIndicator size="large" color="#258269" /><Text style={styles.designerLoadingText}>Cargando diseño…</Text></View> : null}
         </View>
       </View>
     </Modal>
@@ -997,8 +1006,10 @@ const styles = StyleSheet.create({
   confirmCard: { width: "100%", maxWidth: 520, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   confirmTitle: { color: "#17332d", fontSize: 20, fontWeight: "800", marginTop: 8 },
   confirmWarning: { color: "#a53d35", backgroundColor: "#fdecea", borderRadius: 8, padding: 12, marginTop: 14, fontSize: 13, fontWeight: "700" },
-  designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, position: "relative" },
   designerScroll: { maxHeight: 620 },
+  designerLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255, 255, 255, 0.9)", borderRadius: 16, alignItems: "center", justifyContent: "center", zIndex: 40 },
+  designerLoadingText: { color: "#285246", fontSize: 14, fontWeight: "700", marginTop: 12 },
   designerRow: { flexDirection: "row", gap: 8, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 7, marginTop: 5 },
   templateChoices: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginBottom: 10 },
   templateSelectorWrap: { position: "relative", zIndex: 10, minWidth: 300 },
