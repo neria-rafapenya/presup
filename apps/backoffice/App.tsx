@@ -74,6 +74,21 @@ function slugify(value: string) {
     .slice(0, 64);
 }
 
+function internalKey(value: string, occupied: string[] = []) {
+  let base = slugify(value).replace(/-/g, "_");
+  if (!/^[a-z]/.test(base)) base = `campo_${base}`;
+  if (base.length < 2) base = "campo";
+  base = base.slice(0, 64);
+  let candidate = base;
+  let suffix = 2;
+  while (occupied.includes(candidate)) {
+    const suffixText = `_${suffix}`;
+    candidate = `${base.slice(0, 64 - suffixText.length)}${suffixText}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
 function isWizardCompleted() {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(WIZARD_STORAGE_KEY) === "true";
@@ -635,6 +650,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const [designerLoading, setDesignerLoading] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const [highlightTarget, setHighlightTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
+  const [advancedFields, setAdvancedFields] = useState<Record<number, boolean>>({});
   const designerScrollRef = useRef<ScrollView>(null);
   const highlightAnimation = useRef(new Animated.Value(0)).current;
   const fieldPositions = useRef<Record<number, number>>({});
@@ -645,6 +661,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     if (!visible) return;
     let active = true;
     setDesignerLoading(true);
+    setAdvancedFields({});
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
       setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
@@ -684,7 +701,14 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
   const updateField = (index: number, patch: Partial<BlueprintField>) => setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
   const updateItem = (index: number, patch: Partial<BlueprintItem>) => setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
-  const addField = (type = "text", label = "Nueva pregunta") => { const index = draft.fields.length; setDraft({ ...draft, fields: [...draft.fields, { key: `field_${index + 1}`, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
+  const updateFieldLabel = (index: number, label: string) => {
+    const field = draft.fields[index];
+    const occupied = draft.fields.filter((_, fieldIndex) => fieldIndex !== index).map((item) => item.key);
+    const generatedFromCurrent = internalKey(field.label, occupied);
+    const key = field.key === generatedFromCurrent || field.key.startsWith("field_") ? internalKey(label, occupied) : field.key;
+    updateField(index, { label, key });
+  };
+  const addField = (type = "text", label = "Nueva pregunta") => { const index = draft.fields.length; const key = internalKey(label, draft.fields.map((field) => field.key)); setDraft({ ...draft, fields: [...draft.fields, { key, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
   const removeField = (index: number) => setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) });
   const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; const fields = [...draft.fields]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; setDraft({ ...draft, fields }); };
   const addItem = (category = "producto") => { const index = draft.items.length; setDraft({ ...draft, items: [...draft.items, { sku: `item_${index + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] }); setScrollTarget({ section: "item", index }); highlightNewBlock("item", index); };
@@ -719,7 +743,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <Text style={styles.sectionLabel}>Preguntas y variables</Text>
             <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
             <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.fields.map((field, index) => <Animated.View onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null]} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código interno" hint="Es un nombre técnico para que las reglas identifiquen este dato. Ejemplo: cantidad_clientes." value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta para el cliente" hint="Es la frase que verá la persona en el chatbot. Ejemplo: ¿Cuántas unidades necesitas?" value={field.label} onChangeText={(label) => updateField(index, { label })} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: estándar, urgente, express." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />} {field.type === "number" ? <Field label="Unidad" hint="Indica qué se está contando. Ejemplo: ud, horas, m² o kg." value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</Animated.View>)}
+            {draft.fields.map((field, index) => <Animated.View onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null]} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><Pressable style={styles.advancedToggle} onPress={() => setAdvancedFields({ ...advancedFields, [index]: !advancedFields[index] })}><Text style={styles.advancedToggleLabel}>{advancedFields[index] ? "Ocultar opciones avanzadas" : "Mostrar opciones avanzadas"}</Text></Pressable>{advancedFields[index] ? <View style={styles.designerRow}><Field label="Código interno (avanzado)" hint="Identificador técnico usado por reglas y cálculos. Normalmente no necesitas cambiarlo." value={field.key} onChangeText={(key) => updateField(index, { key })} /></View> : null}<View style={styles.designerRow}><Field label="Pregunta para el cliente" hint="Es la frase que verá la persona en el chatbot. Ejemplo: ¿Cuántas unidades necesitas?" value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: estándar, urgente, express." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />} {field.type === "number" ? <Field label="Unidad" hint="Indica qué se está contando. Ejemplo: ud, horas, m² o kg." value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</Animated.View>)}
             <Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
             <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
             {draft.items.map((item, index) => <Animated.View onLayout={(event) => { itemPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "item" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null]} key={`${item.sku}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View></Animated.View>)}
@@ -1037,6 +1061,8 @@ const styles = StyleSheet.create({
   paletteLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   blockCard: { borderWidth: 1, borderColor: "#dbe6df", borderRadius: 10, padding: 10, marginTop: 6, backgroundColor: "#fbfdfb" },
   blockHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
+  advancedToggle: { alignSelf: "flex-start", paddingVertical: 3, marginTop: 2 },
+  advancedToggleLabel: { color: "#718078", fontSize: 11, fontWeight: "700" },
   blockIndex: { color: "#258269", fontSize: 12, fontWeight: "800", width: 22 },
   blockTitle: { color: "#17332d", fontSize: 14, fontWeight: "700", flex: 1 },
   reorderLabel: { color: "#285246", fontSize: 18, fontWeight: "800", paddingHorizontal: 4 },
