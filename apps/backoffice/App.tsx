@@ -620,10 +620,11 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
         <View style={styles.designerCard}>
           <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
           <ScrollView style={styles.designerScroll}>
-            <Text style={styles.sectionLabel}>Ayuda para empezar</Text>
-            <Text style={styles.listMeta}>Estas plantillas solo cargan ejemplos orientativos. Puedes empezar en blanco y escribir, cambiar o eliminar cada nombre, opción, regla y precio para adaptarlo a cualquier negocio.</Text>
+            <Text style={styles.sectionLabel}>Empezar en blanco</Text>
+            <Text style={styles.listMeta}>Los servicios nuevos empiezan sin preguntas, productos ni reglas. Añade solo los bloques que necesite tu negocio. Si te sirve, puedes cargar después una ayuda orientativa y editarla por completo.</Text>
             <View style={styles.templateChoices}>
               <Pressable style={styles.smallButton} onPress={() => { setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
+              <Text style={styles.templateHint}>Cargar ayuda:</Text>
               <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: imprenta</Text></Pressable>
               <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: reformas</Text></Pressable>
               <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: taller</Text></Pressable>
@@ -819,6 +820,7 @@ const styles = StyleSheet.create({
   designerScroll: { maxHeight: 620 },
   designerRow: { flexDirection: "row", gap: 10, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 12, marginTop: 8 },
   templateChoices: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  templateHint: { color: "#718078", fontSize: 12, alignSelf: "center", marginTop: 8 },
   blockPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
   paletteButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "#f7fbf8" },
   paletteLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
