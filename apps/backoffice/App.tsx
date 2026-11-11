@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -582,6 +582,11 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
   const [designerError, setDesignerError] = useState<string | null>(null);
+  const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
+  const designerScrollRef = useRef<ScrollView>(null);
+  const fieldPositions = useRef<Record<number, number>>({});
+  const itemPositions = useRef<Record<number, number>>({});
+  const rulePositions = useRef<Record<number, number>>({});
 
   useEffect(() => {
     if (!visible) return;
@@ -593,15 +598,30 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     });
   }, [visible, service.id, onLoad]);
 
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const timeout = setTimeout(() => {
+      const positions = scrollTarget.section === "field" ? fieldPositions.current : scrollTarget.section === "item" ? itemPositions.current : rulePositions.current;
+      const y = positions[scrollTarget.index];
+      if (y === undefined) {
+        designerScrollRef.current?.scrollToEnd({ animated: true });
+      } else {
+        designerScrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true });
+      }
+      setScrollTarget(null);
+    }, 60);
+    return () => clearTimeout(timeout);
+  }, [draft.fields.length, draft.items.length, ruleCards.length, scrollTarget]);
+
   const updateField = (index: number, patch: Partial<BlueprintField>) => setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
   const updateItem = (index: number, patch: Partial<BlueprintItem>) => setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
-  const addField = (type = "text", label = "Nueva pregunta") => setDraft({ ...draft, fields: [...draft.fields, { key: `field_${draft.fields.length + 1}`, label, type, required: true, options: [], example: exampleForType(type) }] });
+  const addField = (type = "text", label = "Nueva pregunta") => { const index = draft.fields.length; setDraft({ ...draft, fields: [...draft.fields, { key: `field_${index + 1}`, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); };
   const removeField = (index: number) => setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) });
   const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; const fields = [...draft.fields]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; setDraft({ ...draft, fields }); };
-  const addItem = (category = "producto") => setDraft({ ...draft, items: [...draft.items, { sku: `item_${draft.items.length + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] });
+  const addItem = (category = "producto") => { const index = draft.items.length; setDraft({ ...draft, items: [...draft.items, { sku: `item_${index + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] }); setScrollTarget({ section: "item", index }); };
   const removeItem = (index: number) => setDraft({ ...draft, items: draft.items.filter((_, itemIndex) => itemIndex !== index) });
   const updateRule = (index: number, patch: Partial<EditableRule>) => setRuleCards(ruleCards.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule));
-  const addRule = (kind: BlueprintRule["kind"]) => setRuleCards([...ruleCards, editableRule({ code: `${kind}_rule_${ruleCards.length + 1}`, kind, priority: (ruleCards.length + 1) * 10, definition: defaultRuleDefinition(kind) })]);
+  const addRule = (kind: BlueprintRule["kind"]) => { const index = ruleCards.length; setRuleCards([...ruleCards, editableRule({ code: `${kind}_rule_${index + 1}`, kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); };
   const removeRule = (index: number) => setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index));
   const save = async () => {
     try {
@@ -620,7 +640,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       <View style={styles.modalBackdrop}>
         <View style={styles.designerCard}>
           <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
-          <ScrollView style={styles.designerScroll}>
+          <ScrollView ref={designerScrollRef} style={styles.designerScroll}>
             <Text style={styles.sectionLabel}>Empezar en blanco</Text>
             <Text style={styles.listMeta}>Los servicios nuevos empiezan sin preguntas, productos ni reglas. Añade solo los bloques que necesite tu negocio. Si te sirve, puedes cargar después una ayuda orientativa y editarla por completo.</Text>
             <View style={styles.templateChoices}>
@@ -630,14 +650,14 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <Text style={styles.sectionLabel}>Preguntas y variables</Text>
             <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
             <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.fields.map((field, index) => <View style={styles.blockCard} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código interno" hint="Es un nombre técnico para que las reglas identifiquen este dato. Ejemplo: cantidad_clientes." value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta para el cliente" hint="Es la frase que verá la persona en el chatbot. Ejemplo: ¿Cuántas unidades necesitas?" value={field.label} onChangeText={(label) => updateField(index, { label })} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: estándar, urgente, express." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />} {field.type === "number" ? <Field label="Unidad" hint="Indica qué se está contando. Ejemplo: ud, horas, m² o kg." value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</View>)}
+            {draft.fields.map((field, index) => <View onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={styles.blockCard} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código interno" hint="Es un nombre técnico para que las reglas identifiquen este dato. Ejemplo: cantidad_clientes." value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta para el cliente" hint="Es la frase que verá la persona en el chatbot. Ejemplo: ¿Cuántas unidades necesitas?" value={field.label} onChangeText={(label) => updateField(index, { label })} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: estándar, urgente, express." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />} {field.type === "number" ? <Field label="Unidad" hint="Indica qué se está contando. Ejemplo: ud, horas, m² o kg." value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</View>)}
             <Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
             <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.items.map((item, index) => <View style={styles.blockCard} key={`${item.sku}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View></View>)}
+            {draft.items.map((item, index) => <View onLayout={(event) => { itemPositions.current[index] = event.nativeEvent.layout.y; }} style={styles.blockCard} key={`${item.sku}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View></View>)}
             <Text style={styles.sectionLabel}>Reglas deterministas</Text>
             <Text style={styles.listMeta}>El LLM propone datos; estas reglas son las que podrán calcular el importe.</Text>
             <View style={styles.blockPalette}>{[["Mínimo", "minimum"], ["Descuento", "factor"], ["Recargo", "surcharge"], ["Fórmula", "formula"]].map(([label, kind]) => <Pressable style={styles.paletteButton} key={kind} onPress={() => addRule(kind as BlueprintRule["kind"])}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {ruleCards.map((rule, index) => <View style={styles.blockCard} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{rule.code || "Regla sin código"}</Text><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><Text style={styles.fieldLabel}>Detalle de la regla</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></View>)}
+            {ruleCards.map((rule, index) => <View onLayout={(event) => { rulePositions.current[index] = event.nativeEvent.layout.y; }} style={styles.blockCard} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{rule.code || "Regla sin código"}</Text><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><Text style={styles.fieldLabel}>Detalle de la regla</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></View>)}
             <Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text>
             <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={setMeasuresText} multiline />
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
@@ -926,7 +946,7 @@ const styles = StyleSheet.create({
   modalCard: { width: "100%", maxWidth: 620, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   designerScroll: { maxHeight: 620 },
-  designerRow: { flexDirection: "row", gap: 10, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 12, marginTop: 8 },
+  designerRow: { flexDirection: "row", gap: 8, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 7, marginTop: 5 },
   templateChoices: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginBottom: 10 },
   templateSelectorWrap: { position: "relative", zIndex: 10, minWidth: 300 },
   templateSelector: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: "#f7fbf8", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -939,8 +959,8 @@ const styles = StyleSheet.create({
   blockPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
   paletteButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "#f7fbf8" },
   paletteLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
-  blockCard: { borderWidth: 1, borderColor: "#dbe6df", borderRadius: 10, padding: 14, marginTop: 10, backgroundColor: "#fbfdfb" },
-  blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  blockCard: { borderWidth: 1, borderColor: "#dbe6df", borderRadius: 10, padding: 10, marginTop: 6, backgroundColor: "#fbfdfb" },
+  blockHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
   blockIndex: { color: "#258269", fontSize: 12, fontWeight: "800", width: 22 },
   blockTitle: { color: "#17332d", fontSize: 14, fontWeight: "700", flex: 1 },
   reorderLabel: { color: "#285246", fontSize: 18, fontWeight: "800", paddingHorizontal: 4 },
@@ -956,7 +976,7 @@ const styles = StyleSheet.create({
   typeSelector: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: "#fbfcfb", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   typeSelectorLabel: { color: "#17332d", fontSize: 14 },
   typeSelectorHint: { color: "#718078", fontSize: 11 },
-  exampleHint: { color: "#61736a", backgroundColor: "#f0f7f2", borderRadius: 6, paddingHorizontal: 9, paddingVertical: 7, fontSize: 12, marginTop: 2 },
+  exampleHint: { color: "#61736a", backgroundColor: "#f0f7f2", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5, fontSize: 12, marginTop: 2 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   modalClose: { color: "#52645b", fontSize: 28, lineHeight: 28, paddingHorizontal: 6 },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 18 },
@@ -969,18 +989,18 @@ const styles = StyleSheet.create({
   statusRowLabel: { color: "#52645b", fontSize: 14 },
   statusRowValue: { color: "#258269", fontSize: 14, fontWeight: "700" },
   statusOff: { color: "#9a6b27" },
-  field: { flex: 1, marginBottom: 16 },
-  fieldLabel: { color: "#52645b", fontSize: 12, fontWeight: "700", marginBottom: 7 },
+  field: { flex: 1, marginBottom: 8 },
+  fieldLabel: { color: "#52645b", fontSize: 12, fontWeight: "700", marginBottom: 4 },
   sectionLabel: { color: "#17332d", fontSize: 14, fontWeight: "800", marginTop: 10, marginBottom: 10 },
   readonly: { color: "#17332d", fontSize: 16, paddingBottom: 18 },
   formGrid: { flexDirection: "row", gap: 14 },
-  input: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 11, color: "#17332d", backgroundColor: "#fbfcfb" },
+  input: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: "#17332d", backgroundColor: "#fbfcfb" },
   textArea: { minHeight: 92 },
   documentChoices: { flexDirection: "row", gap: 10 },
   documentChoice: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
   documentChoiceActive: { borderColor: "#258269", backgroundColor: "#e8f4ed" },
   documentChoiceLabel: { color: "#285246", fontSize: 13, fontWeight: "600" },
-  toggle: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  toggle: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: "#b7c8be", alignItems: "center", justifyContent: "center", marginRight: 10 },
   checkboxOn: { backgroundColor: "#258269", borderColor: "#258269" },
   check: { color: "#ffffff", fontSize: 14, fontWeight: "800" },
