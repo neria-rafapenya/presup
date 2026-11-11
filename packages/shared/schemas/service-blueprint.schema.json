@@ -19,7 +19,8 @@
           "unit": { "type": "string" },
           "min": { "type": "number" },
           "max": { "type": "number" },
-          "help_text": { "type": "string" }
+          "help_text": { "type": "string" },
+          "example": { "type": "string" }
         },
         "additionalProperties": false
       }

@@ -54,7 +54,7 @@ type TenantProfile = {
   warranty_terms: string | null;
   metadata: Record<string, unknown>;
 };
-type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string };
+type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string; example?: string };
 type BlueprintItem = { sku: string; name: string; description?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, unknown> };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
@@ -594,7 +594,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
   const updateField = (index: number, patch: Partial<BlueprintField>) => setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
   const updateItem = (index: number, patch: Partial<BlueprintItem>) => setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
-  const addField = (type = "text", label = "Nueva pregunta") => setDraft({ ...draft, fields: [...draft.fields, { key: `field_${draft.fields.length + 1}`, label, type, required: true, options: [] }] });
+  const addField = (type = "text", label = "Nueva pregunta") => setDraft({ ...draft, fields: [...draft.fields, { key: `field_${draft.fields.length + 1}`, label, type, required: true, options: [], example: exampleForType(type) }] });
   const removeField = (index: number) => setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) });
   const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; const fields = [...draft.fields]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; setDraft({ ...draft, fields }); };
   const addItem = (category = "producto") => setDraft({ ...draft, items: [...draft.items, { sku: `item_${draft.items.length + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] });
@@ -620,17 +620,18 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
         <View style={styles.designerCard}>
           <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
           <ScrollView style={styles.designerScroll}>
-            <Text style={styles.sectionLabel}>Plantilla inicial</Text>
-            <Text style={styles.listMeta}>Carga una estructura orientativa y personalízala para este negocio.</Text>
+            <Text style={styles.sectionLabel}>Ayuda para empezar</Text>
+            <Text style={styles.listMeta}>Estas plantillas solo cargan ejemplos orientativos. Puedes empezar en blanco y escribir, cambiar o eliminar cada nombre, opción, regla y precio para adaptarlo a cualquier negocio.</Text>
             <View style={styles.templateChoices}>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Imprenta</Text></Pressable>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Reformas</Text></Pressable>
-              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Taller</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => { setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: imprenta</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: reformas</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRuleCards, setMeasuresText)}><Text style={styles.smallButtonLabel}>Ayuda: taller</Text></Pressable>
             </View>
             <Text style={styles.sectionLabel}>Preguntas y variables</Text>
-            <Text style={styles.listMeta}>Añade bloques de la biblioteca y ordénalos con las flechas. Cada bloque se convierte en una pregunta del chatbot.</Text>
+            <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
             <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.fields.map((field, index) => <View style={styles.blockCard} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código" value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta" value={field.label} onChangeText={(label) => updateField(index, { label })} /><Field label="Tipo" value={field.type} onChangeText={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}><Field label="Opciones separadas por coma" value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /><Field label="Unidad" value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /><Toggle label="Obligatoria" value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View></View>)}
+            {draft.fields.map((field, index) => <View style={styles.blockCard} key={`${field.key}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código interno" hint="Es un nombre técnico para que las reglas identifiquen este dato. Ejemplo: cantidad_clientes." value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta para el cliente" hint="Es la frase que verá la persona en el chatbot. Ejemplo: ¿Cuántas unidades necesitas?" value={field.label} onChangeText={(label) => updateField(index, { label })} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: estándar, urgente, express." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />} {field.type === "number" ? <Field label="Unidad" hint="Indica qué se está contando. Ejemplo: ud, horas, m² o kg." value={field.unit ?? ""} onChangeText={(unit) => updateField(index, { unit: unit || undefined })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</View>)}
             <Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
             <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
             {draft.items.map((item, index) => <View style={styles.blockCard} key={`${item.sku}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View></View>)}
@@ -677,14 +678,18 @@ function setDraftFromTemplate(template: "print" | "renovation" | "mechanic", set
   setMeasuresText(JSON.stringify(blueprint.measures, null, 2));
 }
 
+function exampleForType(type: string) {
+  return { text: "un valor escrito", number: "250", choice: "una opción", boolean: "sí", date: "31/12/2026", file: "una imagen o PDF" }[type] ?? "un valor de ejemplo";
+}
+
 function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlueprint {
   if (template === "renovation") return {
     fields: [
-      { key: "room", label: "Estancia a reformar", type: "choice", required: true, options: ["baño", "cocina", "salón"], unit: undefined },
-      { key: "surface_m2", label: "Superficie", type: "number", required: true, options: [], unit: "m²", min: 1 },
-      { key: "tile", label: "Baldosa", type: "choice", required: true, options: ["blanca mate de gres", "porcelánico", "otro"] },
-      { key: "faucet", label: "¿Incluye grifería?", type: "boolean", required: true, options: [] },
-      { key: "labor_hours", label: "Horas de mano de obra", type: "number", required: true, options: [], unit: "h", min: 0 }
+      { key: "room", label: "Estancia a reformar", type: "choice", required: true, options: ["baño", "cocina", "salón"], unit: undefined, example: "baño", help_text: "Selecciona el espacio principal de la reforma." },
+      { key: "surface_m2", label: "Superficie", type: "number", required: true, options: [], unit: "m²", min: 1, example: "8", help_text: "Puedes pedir una medida aproximada si todavía no hay visita." },
+      { key: "tile", label: "Baldosa", type: "choice", required: true, options: ["blanca mate de gres", "porcelánico", "otro"], example: "blanca mate de gres" },
+      { key: "faucet", label: "¿Incluye grifería?", type: "boolean", required: true, options: [], example: "sí" },
+      { key: "labor_hours", label: "Horas de mano de obra", type: "number", required: true, options: [], unit: "h", min: 0, example: "16" }
     ],
     items: [
       { sku: "tile-m2", name: "Baldosa por m²", unit: "m²", base_price: 22, currency: "EUR", metadata: { category: "material" } },
@@ -698,10 +703,10 @@ function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlu
   };
   if (template === "mechanic") return {
     fields: [
-      { key: "operation", label: "Operación", type: "choice", required: true, options: ["mantenimiento", "reparación", "sustitución"] },
-      { key: "part", label: "Pieza o material", type: "text", required: true, options: [] },
-      { key: "labor_hours", label: "Horas de mano de obra", type: "number", required: true, options: [], unit: "h", min: 0 },
-      { key: "repair_photo", label: "Fotografía de la avería", type: "file", required: false, options: [] }
+      { key: "operation", label: "Operación", type: "choice", required: true, options: ["mantenimiento", "reparación", "sustitución"], example: "reparación" },
+      { key: "part", label: "Pieza o material", type: "text", required: true, options: [], example: "pastillas de freno" },
+      { key: "labor_hours", label: "Horas de mano de obra", type: "number", required: true, options: [], unit: "h", min: 0, example: "2" },
+      { key: "repair_photo", label: "Fotografía de la avería", type: "file", required: false, options: [], example: "foto del cuadro de instrumentos" }
     ],
     items: [{ sku: "labor-hour", name: "Hora de mano de obra", unit: "hour", base_price: 45, currency: "EUR", metadata: { category: "labor" } }],
     rules: [{ code: "labor_by_hours", kind: "formula", priority: 10, definition: { quantity: "labor_hours", item: "labor-hour" } }],
@@ -709,13 +714,13 @@ function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlu
   };
   return {
     fields: [
-      { key: "bag_type", label: "Tipo de bolsa", type: "choice", required: true, options: ["tote bag", "mochila", "saco" ] },
-      { key: "material", label: "Material", type: "choice", required: true, options: ["algodón", "yute", "poliéster"] },
-      { key: "quantity", label: "Unidades", type: "number", required: true, options: [], unit: "ud", min: 250 },
-      { key: "size", label: "Talla", type: "choice", required: true, options: ["S", "M", "L"] },
-      { key: "base_color", label: "Color de base", type: "text", required: true, options: [] },
-      { key: "print_type", label: "Tipo de impresión", type: "choice", required: true, options: ["digital", "serigrafía 2 colores", "serigrafía 4 colores"] },
-      { key: "artwork_provided", label: "¿Aporta el diseño?", type: "boolean", required: true, options: [] }
+      { key: "bag_type", label: "Tipo de bolsa", type: "choice", required: true, options: ["tote bag", "mochila", "saco" ], example: "tote bag" },
+      { key: "material", label: "Material", type: "choice", required: true, options: ["algodón", "yute", "poliéster"], example: "algodón" },
+      { key: "quantity", label: "Unidades", type: "number", required: true, options: [], unit: "ud", min: 250, example: "250" },
+      { key: "size", label: "Talla", type: "choice", required: true, options: ["S", "M", "L"], example: "M" },
+      { key: "base_color", label: "Color de base", type: "text", required: true, options: [], example: "crudo" },
+      { key: "print_type", label: "Tipo de impresión", type: "choice", required: true, options: ["digital", "serigrafía 2 colores", "serigrafía 4 colores"], example: "serigrafía 2 colores" },
+      { key: "artwork_provided", label: "¿Aporta el diseño?", type: "boolean", required: true, options: [], example: "sí" }
     ],
     items: [
       { sku: "bag-cotton", name: "Bolsa de algodón", unit: "unit", base_price: 4.5, currency: "EUR", metadata: { category: "producto", material: "algodón" } },
@@ -732,12 +737,25 @@ function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlu
   };
 }
 
-function Field({ label, value, onChangeText, keyboardType, multiline = false }: { label: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean }) {
-  return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><TextInput style={[styles.input, multiline && styles.textArea]} value={value} onChangeText={onChangeText} keyboardType={keyboardType} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} /></View>;
+const FIELD_TYPE_LABELS: Record<string, string> = { text: "Texto", number: "Número", choice: "Opción", boolean: "Sí/No", date: "Fecha", file: "Imagen o archivo" };
+
+function InfoLabel({ label, hint }: { label: string; hint?: string }) {
+  const [open, setOpen] = useState(false);
+  return <View style={styles.infoLabelWrap}><View style={styles.infoLabelRow}><Text style={styles.fieldLabel}>{label}</Text>{hint ? <Pressable style={styles.infoButton} onPress={() => setOpen(!open)} onHoverIn={() => setOpen(true)} onHoverOut={() => setOpen(false)} accessibilityLabel={`Información sobre ${label}`}><Text style={styles.infoButtonLabel}>?</Text></Pressable> : null}</View>{open && hint ? <View style={styles.tooltip}><Text style={styles.tooltipText}>{hint}</Text></View> : null}</View>;
 }
 
-function Toggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
-  return <Pressable style={styles.toggle} onPress={onPress}><View style={[styles.checkbox, value && styles.checkboxOn]}>{value ? <Text style={styles.check}>✓</Text> : null}</View><Text style={styles.toggleLabel}>{label}</Text></Pressable>;
+function Field({ label, hint, value, onChangeText, keyboardType, multiline = false }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean }) {
+  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea]} value={value} onChangeText={onChangeText} keyboardType={keyboardType} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} /></View>;
+}
+
+function FieldTypeSelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const types = ["text", "number", "choice", "boolean", "date", "file"];
+  const nextType = types[(types.indexOf(value) + 1) % types.length] ?? "text";
+  return <View style={styles.field}><InfoLabel label="Cómo responde" hint="Indica qué formato debe usar el cliente. Pulsa el selector para alternar entre texto, número, opción, sí/no, fecha o imagen." /><Pressable style={styles.typeSelector} onPress={() => onChange(nextType)}><Text style={styles.typeSelectorLabel}>{FIELD_TYPE_LABELS[value] ?? value}</Text><Text style={styles.typeSelectorHint}>Pulsa para cambiar</Text></Pressable></View>;
+}
+
+function Toggle({ label, hint, value, onPress }: { label: string; hint?: string; value: boolean; onPress: () => void }) {
+  return <Pressable style={styles.toggle} onPress={onPress}><View style={[styles.checkbox, value && styles.checkboxOn]}>{value ? <Text style={styles.check}>✓</Text> : null}</View><View><InfoLabel label={label} hint={hint} /></View></Pressable>;
 }
 
 function ModulePlaceholder({ title, text }: { title: string; text: string }) {
@@ -812,6 +830,16 @@ const styles = StyleSheet.create({
   deleteLabel: { color: "#a53d35", fontSize: 12, fontWeight: "700", paddingHorizontal: 4 },
   ruleDetailInput: { minHeight: 72, fontFamily: "monospace", fontSize: 12 },
   codeInput: { fontFamily: "monospace", fontSize: 12 },
+  infoLabelWrap: { position: "relative", zIndex: 2 },
+  infoLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  infoButton: { width: 17, height: 17, borderRadius: 9, borderWidth: 1, borderColor: "#8da99b", alignItems: "center", justifyContent: "center", marginBottom: 7 },
+  infoButtonLabel: { color: "#285246", fontSize: 11, fontWeight: "800" },
+  tooltip: { position: "absolute", top: 22, left: 0, minWidth: 190, maxWidth: 280, backgroundColor: "#17332d", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 8, zIndex: 20 },
+  tooltipText: { color: "#ffffff", fontSize: 11, lineHeight: 16 },
+  typeSelector: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: "#fbfcfb", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  typeSelectorLabel: { color: "#17332d", fontSize: 14 },
+  typeSelectorHint: { color: "#718078", fontSize: 11 },
+  exampleHint: { color: "#61736a", backgroundColor: "#f0f7f2", borderRadius: 6, paddingHorizontal: 9, paddingVertical: 7, fontSize: 12, marginTop: 2 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   modalClose: { color: "#52645b", fontSize: 28, lineHeight: 28, paddingHorizontal: 6 },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 18 },

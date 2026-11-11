@@ -17,6 +17,7 @@ export type IntakeField = {
   min?: number;
   max?: number;
   helpText?: string;
+  example?: string;
 };
 
 export type ServiceBlueprint = {

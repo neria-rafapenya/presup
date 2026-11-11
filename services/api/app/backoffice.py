@@ -61,6 +61,7 @@ class BlueprintField(BaseModel):
     min: Decimal | None = None
     max: Decimal | None = None
     help_text: str | None = Field(default=None, max_length=500)
+    example: str | None = Field(default=None, max_length=500)
 
 
 class BlueprintItem(BaseModel):
