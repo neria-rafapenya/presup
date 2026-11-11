@@ -14,7 +14,7 @@ Todas las tablas propias llevan el prefijo `horekia_` y las tablas de negocio ll
 
 ## Acceso
 
-`horekia_app.is_tenant_member` y `horekia_app.has_tenant_role` consultan la membresía de `auth.uid()`. RLS permite lectura a miembros activos, escritura de configuración a owner/editor y revisión operativa a reviewer mediante políticas específicas. El acceso público al chat no lee tablas directamente: se añadirá en Fase 3 mediante backend y sesiones limitadas.
+`horekia_app.is_tenant_member` y `horekia_app.has_tenant_role` consultan la membresía del `sub` en `request.jwt.claim.sub`. RLS permite lectura a miembros activos, escritura de configuración a owner/editor y revisión operativa a reviewer mediante políticas específicas. El acceso público al chat no lee tablas directamente: se añadirá en Fase 3 mediante backend y sesiones limitadas.
 
 `horekia_attachments` guarda la relación con los archivos y su ruta, pero esta migración no crea buckets ni políticas en `storage.*` para no modificar tablas compartidas de Supabase. Esa integración se hará mediante una migración aislada tras autorización.
 

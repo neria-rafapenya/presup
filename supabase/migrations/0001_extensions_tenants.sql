@@ -18,8 +18,8 @@ create table public.horekia_tenants (
   constraint tenants_slug_format check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
 
--- user_id se mantiene desacoplado de auth.users para que la migración sea importable;
--- la identidad real siempre se valida con auth.uid() y Auth de Supabase.
+-- user_id representa la identidad de aplicación de Horekia y se mantiene
+-- desacoplado de auth.users. El backend escribe request.jwt.claim.sub.
 create table public.horekia_tenant_users (
   tenant_id uuid not null references public.horekia_tenants(id) on delete cascade,
   user_id uuid not null,
@@ -41,6 +41,14 @@ create table public.horekia_tenant_settings (
   updated_at timestamptz not null default now()
 );
 
+create or replace function horekia_app.current_user_id()
+returns uuid
+language sql
+stable
+as $$
+  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
+$$;
+
 create or replace function horekia_app.is_tenant_member(p_tenant_id uuid)
 returns boolean
 language sql
@@ -52,7 +60,7 @@ as $$
     select 1
     from public.horekia_tenant_users tu
     where tu.tenant_id = p_tenant_id
-      and tu.user_id = auth.uid()
+      and tu.user_id = horekia_app.current_user_id()
       and tu.status = 'active'
   );
 $$;
@@ -71,7 +79,7 @@ as $$
     select 1
     from public.horekia_tenant_users tu
     where tu.tenant_id = p_tenant_id
-      and tu.user_id = auth.uid()
+      and tu.user_id = horekia_app.current_user_id()
       and tu.status = 'active'
       and tu.role = any(p_roles)
   );

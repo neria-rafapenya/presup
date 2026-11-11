@@ -1,6 +1,6 @@
 -- Horekia Fase 1: aislamiento técnico y adjuntos privados.
 -- Las operaciones de inicialización con service_role omiten RLS; las operaciones
--- ordinarias usan la identidad JWT del usuario mediante auth.uid().
+-- ordinarias usan la identidad JWT de aplicación mediante request.jwt.claim.sub.
 do $$
 declare
   table_name text;

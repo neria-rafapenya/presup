@@ -6,7 +6,7 @@
 - API FastAPI con `/healthz`, `/readyz` y validación segura de configuración.
 - Contratos JSON Schema para fichas, reglas de precio y presupuestos.
 - Migraciones Supabase ordenadas por dependencias para el modelo mínimo de Fase 1.
-- Tablas propias con prefijo `horekia_`, claves foráneas compuestas con `tenant_id` y RLS por pertenencia y rol.
+- Tablas propias con prefijo `horekia_`, claves foráneas compuestas con `tenant_id` y RLS por identidad de aplicación y rol.
 - Datos ficticios mínimos para dos empresas y esqueleto de prueba de aislamiento.
 - Compose de desarrollo para la API y matriz de versiones documentada.
 
