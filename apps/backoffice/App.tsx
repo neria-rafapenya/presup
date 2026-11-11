@@ -655,6 +655,8 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const [measuresText, setMeasuresText] = useState("[]");
   const [designerError, setDesignerError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [designerDirty, setDesignerDirty] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [designerLoading, setDesignerLoading] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const [highlightTarget, setHighlightTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
@@ -679,6 +681,8 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     setAdvancedFields({});
     setSaveMessage(null);
     setDesignerError(null);
+    setDesignerDirty(false);
+    setDiscardConfirmOpen(false);
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
       setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
@@ -717,8 +721,9 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     });
   };
 
-  const updateField = (index: number, patch: Partial<BlueprintField>) => setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
-  const updateItem = (index: number, patch: Partial<BlueprintItem>) => setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
+  const markDesignerDirty = () => { setDesignerDirty(true); setSaveMessage(null); };
+  const updateField = (index: number, patch: Partial<BlueprintField>) => { markDesignerDirty(); setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) }); };
+  const updateItem = (index: number, patch: Partial<BlueprintItem>) => { markDesignerDirty(); setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }); };
   const updateFieldLabel = (index: number, label: string) => {
     const field = draft.fields[index];
     const occupied = draft.fields.filter((_, fieldIndex) => fieldIndex !== index).map((item) => item.key);
@@ -726,15 +731,15 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     const key = field.key === generatedFromCurrent || field.key.startsWith("field_") ? internalKey(label, occupied) : field.key;
     updateField(index, { label, key });
   };
-  const addField = (type = "text", label = "Nueva pregunta") => { const index = draft.fields.length; const key = internalKey(label, draft.fields.map((field) => field.key)); fieldEditorIds.current = [...fieldEditorIds.current, createFieldEditorId()]; setDraft({ ...draft, fields: [...draft.fields, { key, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
-  const removeField = (index: number) => { fieldEditorIds.current = fieldEditorIds.current.filter((_, fieldIndex) => fieldIndex !== index); setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) }); };
-  const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; const fields = [...draft.fields]; const editorIds = [...fieldEditorIds.current]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; [editorIds[index], editorIds[nextIndex]] = [editorIds[nextIndex], editorIds[index]]; fieldEditorIds.current = editorIds; setDraft({ ...draft, fields }); };
-  const loadTemplate = (template: ServiceTemplate) => { const blueprint = blueprintFor(template); resetFieldEditorIds(blueprint.fields); setDraftFromTemplate(template, setDraft, setRuleCards, setMeasuresText); };
-  const addItem = (category = "producto") => { const index = draft.items.length; setDraft({ ...draft, items: [...draft.items, { sku: `item_${index + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] }); setScrollTarget({ section: "item", index }); highlightNewBlock("item", index); };
-  const removeItem = (index: number) => setDraft({ ...draft, items: draft.items.filter((_, itemIndex) => itemIndex !== index) });
-  const updateRule = (index: number, patch: Partial<EditableRule>) => setRuleCards(ruleCards.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule));
-  const addRule = (kind: BlueprintRule["kind"]) => { const index = ruleCards.length; setRuleCards([...ruleCards, editableRule({ code: `${kind}_rule_${index + 1}`, kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); highlightNewBlock("rule", index); };
-  const removeRule = (index: number) => setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index));
+  const addField = (type = "text", label = "Nueva pregunta") => { markDesignerDirty(); const index = draft.fields.length; const key = internalKey(label, draft.fields.map((field) => field.key)); fieldEditorIds.current = [...fieldEditorIds.current, createFieldEditorId()]; setDraft({ ...draft, fields: [...draft.fields, { key, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
+  const removeField = (index: number) => { markDesignerDirty(); fieldEditorIds.current = fieldEditorIds.current.filter((_, fieldIndex) => fieldIndex !== index); setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) }); };
+  const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; markDesignerDirty(); const fields = [...draft.fields]; const editorIds = [...fieldEditorIds.current]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; [editorIds[index], editorIds[nextIndex]] = [editorIds[nextIndex], editorIds[index]]; fieldEditorIds.current = editorIds; setDraft({ ...draft, fields }); };
+  const loadTemplate = (template: ServiceTemplate) => { markDesignerDirty(); const blueprint = blueprintFor(template); resetFieldEditorIds(blueprint.fields); setDraftFromTemplate(template, setDraft, setRuleCards, setMeasuresText); };
+  const addItem = (category = "producto") => { markDesignerDirty(); const index = draft.items.length; setDraft({ ...draft, items: [...draft.items, { sku: `item_${index + 1}`, name: `Nuevo ${category}`, unit: "unit", currency: "EUR", metadata: { category } }] }); setScrollTarget({ section: "item", index }); highlightNewBlock("item", index); };
+  const removeItem = (index: number) => { markDesignerDirty(); setDraft({ ...draft, items: draft.items.filter((_, itemIndex) => itemIndex !== index) }); };
+  const updateRule = (index: number, patch: Partial<EditableRule>) => { markDesignerDirty(); setRuleCards(ruleCards.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule)); };
+  const addRule = (kind: BlueprintRule["kind"]) => { markDesignerDirty(); const index = ruleCards.length; setRuleCards([...ruleCards, editableRule({ code: `${kind}_rule_${index + 1}`, kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); highlightNewBlock("rule", index); };
+  const removeRule = (index: number) => { markDesignerDirty(); setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index)); };
   const save = async () => {
     try {
       const rules = ruleCards.map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
@@ -744,6 +749,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       const saved = await onSave(service.id, { ...draft, fields, rules, measures });
       if (saved) {
         setDesignerError(null);
+        setDesignerDirty(false);
         setSaveMessage("Patrón guardado. Puedes seguir editándolo.");
       } else {
         setDesignerError("No se ha podido guardar el patrón. Revisa la conexión con la API e inténtalo de nuevo.");
@@ -752,17 +758,28 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       setDesignerError(error instanceof Error ? error.message : "JSON de reglas no válido");
     }
   };
+  const requestClose = () => {
+    if (designerDirty) {
+      setDiscardConfirmOpen(true);
+    } else {
+      onClose();
+    }
+  };
+  const discardAndClose = () => {
+    setDiscardConfirmOpen(false);
+    onClose();
+  };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={requestClose}>
       <View style={styles.modalBackdrop}>
         <View style={styles.designerCard}>
-          <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
+          <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><View style={styles.modalHeaderActions}><Pressable style={styles.headerSaveButton} onPress={() => void save()} disabled={saving}><Text style={styles.headerSaveLabel}>{saving ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={requestClose}><Text style={styles.modalClose}>×</Text></Pressable></View></View>
           <ScrollView ref={designerScrollRef} style={styles.designerScroll}>
             <Text style={styles.sectionLabel}>Empezar en blanco</Text>
             <Text style={styles.listMeta}>Los servicios nuevos empiezan sin preguntas, productos ni reglas. Añade solo los bloques que necesite tu negocio. Si te sirve, puedes cargar después una ayuda orientativa y editarla por completo.</Text>
             <View style={styles.templateChoices}>
-              <Pressable style={styles.smallButton} onPress={() => { resetFieldEditorIds([]); setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => { markDesignerDirty(); resetFieldEditorIds([]); setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
               <TemplateSelector onSelect={loadTemplate} />
             </View>
             <Text style={styles.sectionLabel}>Preguntas y variables</Text>
@@ -777,12 +794,13 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <View style={styles.blockPalette}>{[["Mínimo", "minimum"], ["Descuento", "factor"], ["Recargo", "surcharge"], ["Fórmula", "formula"]].map(([label, kind]) => <Pressable style={styles.paletteButton} key={kind} onPress={() => addRule(kind as BlueprintRule["kind"])}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
             {ruleCards.map((rule, index) => <Animated.View onLayout={(event) => { rulePositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "rule" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null]} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Text style={styles.blockTitle}>{rule.code || "Regla sin código"}</Text><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><View style={styles.designerRow}><Field label="Código" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><Text style={styles.fieldLabel}>Detalle de la regla</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></Animated.View>)}
             <Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text>
-            <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={setMeasuresText} multiline />
+            <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={(value) => { markDesignerDirty(); setMeasuresText(value); }} multiline />
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
             {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}
           </ScrollView>
-          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cerrar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void save()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar patrón"}</Text></Pressable></View>
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={requestClose}><Text style={styles.secondaryLabel}>Cerrar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void save()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar patrón"}</Text></Pressable></View>
           {designerLoading ? <View style={styles.designerLoadingOverlay}><ActivityIndicator size="large" color="#258269" /><Text style={styles.designerLoadingText}>Cargando diseño…</Text></View> : null}
+          {discardConfirmOpen ? <View style={styles.discardOverlay}><View style={styles.discardCard}><Text style={styles.panelTitle}>Cambios sin guardar</Text><Text style={styles.wizardText}>Has creado o modificado este patrón. Si cierras ahora, perderás los cambios.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={() => setDiscardConfirmOpen(false)}><Text style={styles.secondaryLabel}>Seguir editando</Text></Pressable><Pressable style={styles.dangerButton} onPress={discardAndClose}><Text style={styles.primaryLabel}>Salir sin guardar</Text></Pressable></View></View></View> : null}
         </View>
       </View>
     </Modal>
@@ -1072,8 +1090,8 @@ const styles = StyleSheet.create({
   confirmCard: { width: "100%", maxWidth: 520, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   confirmTitle: { color: "#17332d", fontSize: 20, fontWeight: "800", marginTop: 8 },
   confirmWarning: { color: "#a53d35", backgroundColor: "#fdecea", borderRadius: 8, padding: 12, marginTop: 14, fontSize: 13, fontWeight: "700" },
-  designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, position: "relative" },
-  designerScroll: { maxHeight: 620 },
+  designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, position: "relative", overflow: "hidden" },
+  designerScroll: { flexShrink: 1, maxHeight: 620 },
   designerLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255, 255, 255, 0.9)", borderRadius: 16, alignItems: "center", justifyContent: "center", zIndex: 40 },
   designerLoadingText: { color: "#285246", fontSize: 14, fontWeight: "700", marginTop: 12 },
   designerRow: { flexDirection: "row", gap: 8, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 7, marginTop: 5 },
@@ -1112,7 +1130,12 @@ const styles = StyleSheet.create({
   typeSelectorHint: { color: "#718078", fontSize: 11 },
   exampleHint: { color: "#61736a", backgroundColor: "#f0f7f2", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5, fontSize: 12, marginTop: 2 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  modalHeaderActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headerSaveButton: { backgroundColor: "#258269", borderRadius: 8, paddingHorizontal: 13, paddingVertical: 8 },
+  headerSaveLabel: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
   modalClose: { color: "#52645b", fontSize: 28, lineHeight: 28, paddingHorizontal: 6 },
+  discardOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(23, 51, 45, 0.42)", alignItems: "center", justifyContent: "center", padding: 24, zIndex: 50 },
+  discardCard: { width: "100%", maxWidth: 500, backgroundColor: "#ffffff", borderRadius: 14, padding: 22, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 18 },
   metric: { backgroundColor: "#ffffff", borderRadius: 12, padding: 20, minWidth: 150, flexGrow: 1, flexBasis: "20%", borderWidth: 1, borderColor: "#e1e8e3" },
   metricValue: { color: "#17332d", fontSize: 28, fontWeight: "800" },
