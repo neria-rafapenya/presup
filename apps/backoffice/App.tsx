@@ -63,6 +63,16 @@ type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "clean
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
 
+function slugify(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
 function isWizardCompleted() {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(WIZARD_STORAGE_KEY) === "true";
@@ -173,10 +183,12 @@ export default function App() {
     setSaving(true);
     setError(null);
     try {
-      await api<JobType>("/api/v1/backoffice/job-types", {
+      const created = await api<JobType>("/api/v1/backoffice/job-types", {
         method: "POST",
         body: JSON.stringify(newService),
       });
+      setServices((current) => current.some((service) => service.id === created.id) ? current.map((service) => service.id === created.id ? created : service) : [...current, created].sort((left, right) => left.name.localeCompare(right.name)));
+      setSummary((current) => current ? { ...current, counts: { ...current.counts, job_types: current.counts.job_types + 1 } } : current);
       await load();
       return true;
     } catch {
@@ -343,7 +355,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <>
             <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
             <Text style={styles.wizardText}>Define aquí los productos o servicios que tu empresa quiere presupuestar. Si tienes una imprenta, una empresa de reformas o un taller mecánico, crea cada tipo de trabajo que ofreces y después configura sus preguntas, opciones y precios. Así la IA tendrá el contexto necesario para entender la petición, pedir los datos que falten y responder con un presupuesto conciso.</Text>
-            {services.slice(0, 3).map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
+            {services.map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
             <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
           </>
         ) : null}
@@ -566,8 +578,8 @@ function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean
           <View style={styles.modalHeader}><Text style={styles.panelTitle}>Añadir servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
           <Text style={styles.wizardText}>Añádelo sin salir del contexto del Wizard o del catálogo.</Text>
           <View style={styles.formGrid}>
-            <Field label="Slug" value={draft.slug} onChangeText={(slug) => setDraft({ ...draft, slug })} />
-            <Field label="Nombre" value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} />
+            <Field label="Nombre" hint="Es el nombre visible del producto o servicio que quieres presupuestar." value={draft.name} onChangeText={(name) => setDraft({ ...draft, name, slug: slugify(name) })} />
+            <Field label="Slug automático" hint="Identificador interno creado automáticamente a partir del nombre." value={draft.slug} editable={false} onChangeText={() => undefined} />
           </View>
           <Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />
           <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
@@ -873,8 +885,8 @@ function InfoLabel({ label, hint }: { label: string; hint?: string }) {
   return <View style={styles.infoLabelWrap}><View style={styles.infoLabelRow}><Text style={styles.fieldLabel}>{label}</Text>{hint ? <Pressable style={styles.infoButton} onPress={() => setOpen(!open)} onHoverIn={() => setOpen(true)} onHoverOut={() => setOpen(false)} accessibilityLabel={`Información sobre ${label}`}><Text style={styles.infoButtonLabel}>?</Text></Pressable> : null}</View>{open && hint ? <View style={styles.tooltip}><Text style={styles.tooltipText}>{hint}</Text></View> : null}</View>;
 }
 
-function Field({ label, hint, value, onChangeText, keyboardType, multiline = false }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean }) {
-  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea]} value={value} onChangeText={onChangeText} keyboardType={keyboardType} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} /></View>;
+function Field({ label, hint, value, onChangeText, keyboardType, multiline = false, editable = true }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean; editable?: boolean }) {
+  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea, !editable && styles.readonlyInput]} value={value} onChangeText={onChangeText} keyboardType={keyboardType} multiline={multiline} editable={editable} textAlignVertical={multiline ? "top" : "center"} /></View>;
 }
 
 function FieldTypeSelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -995,6 +1007,7 @@ const styles = StyleSheet.create({
   readonly: { color: "#17332d", fontSize: 16, paddingBottom: 18 },
   formGrid: { flexDirection: "row", gap: 14 },
   input: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: "#17332d", backgroundColor: "#fbfcfb" },
+  readonlyInput: { color: "#718078", backgroundColor: "#f1f4f2" },
   textArea: { minHeight: 92 },
   documentChoices: { flexDirection: "row", gap: 10 },
   documentChoice: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
