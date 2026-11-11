@@ -31,6 +31,29 @@ type NewService = { slug: string; name: string; description: string };
 type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
 type KnowledgeSummary = { total: number; by_kind: { kind: string; count: number }[] };
 type KnowledgeEntry = { id: string; kind: string; title: string; source_name?: string | null };
+type TenantProfile = {
+  legal_name: string | null;
+  display_name: string | null;
+  tax_id: string | null;
+  contact_name: string | null;
+  contact_role: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  billing_email: string | null;
+  quotes_email: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  postal_code: string | null;
+  city: string | null;
+  region: string | null;
+  country: string;
+  quote_document_type: "quote" | "proforma";
+  quote_template_available: boolean;
+  quote_template_filename: string;
+  disclaimers: string | null;
+  warranty_terms: string | null;
+  metadata: Record<string, unknown>;
+};
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
@@ -41,8 +64,9 @@ function isWizardCompleted() {
 }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const isMultipart = typeof FormData !== "undefined" && options?.body instanceof FormData;
   const response = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: isMultipart ? options?.headers : { "Content-Type": "application/json", ...(options?.headers ?? {}) },
     ...options,
   });
   if (!response.ok) throw new Error(`API ${response.status}`);
@@ -52,6 +76,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 export default function App() {
   const [screen, setScreen] = useState<Screen>(() => (isWizardCompleted() ? "dashboard" : "wizard"));
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
   const [knowledgeSummary, setKnowledgeSummary] = useState<KnowledgeSummary>({ total: 0, by_kind: [] });
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
@@ -69,7 +94,9 @@ export default function App() {
         api<KnowledgeSummary>("/api/v1/backoffice/knowledge/summary"),
         api<KnowledgeEntry[]>("/api/v1/backoffice/knowledge/entries"),
       ]);
+      const nextProfile = await api<TenantProfile>("/api/v1/backoffice/profile");
       setSummary(nextSummary);
+      setProfile(nextProfile);
       setServices(nextServices);
       setKnowledgeSummary(nextKnowledgeSummary);
       setKnowledgeEntries(nextKnowledgeEntries);
@@ -77,6 +104,41 @@ export default function App() {
       setError("No se ha podido conectar con la API de Horekia.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveProfile = async (nextProfile: TenantProfile) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await api<TenantProfile>("/api/v1/backoffice/profile", {
+        method: "PATCH",
+        body: JSON.stringify(nextProfile),
+      });
+      setProfile(saved);
+      return true;
+    } catch {
+      setError("No se ha podido guardar la ficha de empresa.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const uploadTemplate = async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    setSaving(true);
+    setError(null);
+    try {
+      await api("/api/v1/backoffice/profile/quote-template", { method: "POST", body: form });
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido cargar la plantilla PDF.");
+      return false;
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -170,12 +232,12 @@ export default function App() {
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {loading && !summary ? (
+        {loading && (!summary || !profile) ? (
           <ActivityIndicator color="#147d68" size="large" style={styles.loader} />
-        ) : summary ? (
+        ) : summary && profile ? (
           <>
             {screen === "wizard" ? (
-              <Wizard summary={summary} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onCreateService={createService} onImportKnowledge={importKnowledge} saving={saving} />
+              <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onImportKnowledge={importKnowledge} saving={saving} />
             ) : null}
             {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
             {screen === "company" ? (
@@ -221,7 +283,7 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, services, knowledgeSummary, knowledgeEntries, onComplete, onCreateService, onImportKnowledge, saving }: { summary: Summary; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onCreateService: (service: NewService) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
+function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onImportKnowledge, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(0);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
@@ -244,9 +306,7 @@ function Wizard({ summary, services, knowledgeSummary, knowledgeEntries, onCompl
         {step === 0 ? (
           <>
             <Text style={styles.panelTitle}>1. Datos de empresa</Text>
-            <Text style={styles.wizardText}>Esta instalación está vinculada a:</Text>
-            <Text style={styles.wizardTenant}>{summary.tenant.name}</Text>
-            <Text style={styles.listMeta}>Idioma inicial: {summary.tenant.default_locale}</Text>
+            <TenantProfileForm profile={profile} setProfile={setProfile} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} />
           </>
         ) : null}
         {step === 1 ? (
@@ -312,6 +372,62 @@ function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving 
       {rows.length > 0 ? <Text style={styles.wizardText}>{rows.length} fila(s) listas para importar.</Text> : null}
       <Pressable style={styles.primaryButton} onPress={importRows} disabled={saving || rows.length === 0}><Text style={styles.primaryLabel}>{saving ? "Importando…" : "Importar conocimiento"}</Text></Pressable>
       <Text style={styles.knowledgeCount}>Base actual: {knowledgeSummary.total} entradas · {knowledgeEntries.slice(0, 3).map((entry) => entry.title).join(", ") || "sin entradas"}</Text>
+    </View>
+  );
+}
+
+function TenantProfileForm({ profile, setProfile, onSave, onUploadTemplate, saving, fallbackName }: { profile: TenantProfile; setProfile: (profile: TenantProfile) => void; onSave: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; saving: boolean; fallbackName: string }) {
+  const update = (patch: Partial<TenantProfile>) => setProfile({ ...profile, ...patch });
+  const chooseTemplate = () => {
+    if (typeof document === "undefined") return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/pdf,.pdf";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (file) await onUploadTemplate(file);
+    };
+    input.click();
+  };
+  return (
+    <View>
+      <Text style={styles.wizardText}>Esta instalación está vinculada a {fallbackName}. Completa la información que aparecerá en presupuestos y comunicaciones.</Text>
+      <View style={styles.formGrid}>
+        <Field label="Nombre comercial" value={profile.display_name ?? ""} onChangeText={(display_name) => update({ display_name })} />
+        <Field label="Razón social" value={profile.legal_name ?? ""} onChangeText={(legal_name) => update({ legal_name })} />
+      </View>
+      <View style={styles.formGrid}>
+        <Field label="NIF/CIF" value={profile.tax_id ?? ""} onChangeText={(tax_id) => update({ tax_id })} />
+        <Field label="Teléfono" value={profile.contact_phone ?? ""} onChangeText={(contact_phone) => update({ contact_phone })} />
+      </View>
+      <Text style={styles.sectionLabel}>Persona responsable</Text>
+      <View style={styles.formGrid}>
+        <Field label="Nombre" value={profile.contact_name ?? ""} onChangeText={(contact_name) => update({ contact_name })} />
+        <Field label="Cargo" value={profile.contact_role ?? ""} onChangeText={(contact_role) => update({ contact_role })} />
+      </View>
+      <View style={styles.formGrid}>
+        <Field label="Email de contacto" value={profile.contact_email ?? ""} onChangeText={(contact_email) => update({ contact_email })} />
+        <Field label="Email de presupuestos" value={profile.quotes_email ?? ""} onChangeText={(quotes_email) => update({ quotes_email })} />
+      </View>
+      <Field label="Email de facturación" value={profile.billing_email ?? ""} onChangeText={(billing_email) => update({ billing_email })} />
+      <Text style={styles.sectionLabel}>Dirección</Text>
+      <Field label="Dirección" value={profile.address_line1 ?? ""} onChangeText={(address_line1) => update({ address_line1 })} />
+      <View style={styles.formGrid}>
+        <Field label="Código postal" value={profile.postal_code ?? ""} onChangeText={(postal_code) => update({ postal_code })} />
+        <Field label="Ciudad" value={profile.city ?? ""} onChangeText={(city) => update({ city })} />
+        <Field label="Provincia/Región" value={profile.region ?? ""} onChangeText={(region) => update({ region })} />
+      </View>
+      <Text style={styles.sectionLabel}>Documento comercial</Text>
+      <Text style={styles.fieldLabel}>Modelo que generará el presupuesto</Text>
+      <View style={styles.documentChoices}>
+        <Pressable style={[styles.documentChoice, profile.quote_document_type === "quote" && styles.documentChoiceActive]} onPress={() => update({ quote_document_type: "quote" })}><Text style={styles.documentChoiceLabel}>Presupuesto</Text></Pressable>
+        <Pressable style={[styles.documentChoice, profile.quote_document_type === "proforma" && styles.documentChoiceActive]} onPress={() => update({ quote_document_type: "proforma" })}><Text style={styles.documentChoiceLabel}>Proforma</Text></Pressable>
+      </View>
+      <Pressable style={styles.secondaryButton} onPress={chooseTemplate} disabled={saving}><Text style={styles.secondaryLabel}>{profile.quote_template_filename || "Cargar modelo PDF"}</Text></Pressable>
+      <Text style={styles.listMeta}>La plantilla se guarda en la base Horekia de la POC. Más adelante podrá trasladarse a Storage privado.</Text>
+      <Field label="Disclaimers" value={profile.disclaimers ?? ""} onChangeText={(disclaimers) => update({ disclaimers })} multiline />
+      <Field label="Garantía y condiciones" value={profile.warranty_terms ?? ""} onChangeText={(warranty_terms) => update({ warranty_terms })} multiline />
+      <Pressable style={styles.primaryButton} onPress={() => void onSave(profile)} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar datos de empresa"}</Text></Pressable>
     </View>
   );
 }
@@ -428,8 +544,8 @@ function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean
   );
 }
 
-function Field({ label, value, onChangeText, keyboardType }: { label: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad" }) {
-  return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><TextInput style={styles.input} value={value} onChangeText={onChangeText} keyboardType={keyboardType} /></View>;
+function Field({ label, value, onChangeText, keyboardType, multiline = false }: { label: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean }) {
+  return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><TextInput style={[styles.input, multiline && styles.textArea]} value={value} onChangeText={onChangeText} keyboardType={keyboardType} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} /></View>;
 }
 
 function Toggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
@@ -504,9 +620,15 @@ const styles = StyleSheet.create({
   statusOff: { color: "#9a6b27" },
   field: { flex: 1, marginBottom: 16 },
   fieldLabel: { color: "#52645b", fontSize: 12, fontWeight: "700", marginBottom: 7 },
+  sectionLabel: { color: "#17332d", fontSize: 14, fontWeight: "800", marginTop: 10, marginBottom: 10 },
   readonly: { color: "#17332d", fontSize: 16, paddingBottom: 18 },
   formGrid: { flexDirection: "row", gap: 14 },
   input: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 11, color: "#17332d", backgroundColor: "#fbfcfb" },
+  textArea: { minHeight: 92 },
+  documentChoices: { flexDirection: "row", gap: 10 },
+  documentChoice: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  documentChoiceActive: { borderColor: "#258269", backgroundColor: "#e8f4ed" },
+  documentChoiceLabel: { color: "#285246", fontSize: 13, fontWeight: "600" },
   toggle: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: "#b7c8be", alignItems: "center", justifyContent: "center", marginRight: 10 },
   checkboxOn: { backgroundColor: "#258269", borderColor: "#258269" },

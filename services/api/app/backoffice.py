@@ -1,9 +1,11 @@
 """Backoffice POC routes backed by the Horekia PostgreSQL namespace."""
 
+import io
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
@@ -19,6 +21,27 @@ class SettingsPatch(BaseModel):
     quote_validity_days: int = Field(gt=0, le=3650)
     review_required: bool
     public_chat_enabled: bool
+
+
+class ProfilePatch(BaseModel):
+    legal_name: str | None = Field(default=None, max_length=240)
+    display_name: str | None = Field(default=None, max_length=240)
+    tax_id: str | None = Field(default=None, max_length=80)
+    contact_name: str | None = Field(default=None, max_length=160)
+    contact_role: str | None = Field(default=None, max_length=160)
+    contact_email: str | None = Field(default=None, max_length=240)
+    contact_phone: str | None = Field(default=None, max_length=80)
+    billing_email: str | None = Field(default=None, max_length=240)
+    quotes_email: str | None = Field(default=None, max_length=240)
+    address_line1: str | None = Field(default=None, max_length=240)
+    address_line2: str | None = Field(default=None, max_length=240)
+    postal_code: str | None = Field(default=None, max_length=30)
+    city: str | None = Field(default=None, max_length=120)
+    region: str | None = Field(default=None, max_length=120)
+    country: str = Field(default="España", max_length=120)
+    quote_document_type: str = Field(default="quote", pattern=r"^(quote|proforma)$")
+    disclaimers: str | None = Field(default=None, max_length=10000)
+    warranty_terms: str | None = Field(default=None, max_length=10000)
 
 
 class JobTypeCreate(BaseModel):
@@ -86,6 +109,147 @@ def summary(settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # no
                 ).fetchone()["count"],
             }
             return {"tenant": tenant, "settings": tenant_settings, "counts": counts}
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.get("/profile")
+def profile(settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            conn.execute(
+                """
+                insert into public.horekia_tenant_profiles (tenant_id, legal_name, display_name)
+                select id, name, name from public.horekia_tenants where id = %s
+                on conflict (tenant_id) do nothing
+                """,
+                (POC_TENANT_ID,),
+            )
+            row = conn.execute(
+                """
+                select legal_name, display_name, tax_id, contact_name, contact_role,
+                       contact_email, contact_phone, billing_email, quotes_email,
+                       address_line1, address_line2, postal_code, city, region, country,
+                       quote_document_type, quote_template_document_id is not null as quote_template_available,
+                       coalesce((select filename from public.horekia_tenant_documents d
+                                 where d.tenant_id = p.tenant_id and d.id = p.quote_template_document_id), '')
+                         as quote_template_filename,
+                       disclaimers, warranty_terms, metadata
+                from public.horekia_tenant_profiles p where tenant_id = %s
+                """,
+                (POC_TENANT_ID,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Ficha de empresa no encontrada")
+            return row
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.patch("/profile")
+def update_profile(payload: ProfilePatch, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                update public.horekia_tenant_profiles
+                set legal_name = %s, display_name = %s, tax_id = %s,
+                    contact_name = %s, contact_role = %s, contact_email = %s,
+                    contact_phone = %s, billing_email = %s, quotes_email = %s,
+                    address_line1 = %s, address_line2 = %s, postal_code = %s,
+                    city = %s, region = %s, country = %s,
+                    quote_document_type = %s, disclaimers = %s, warranty_terms = %s,
+                    updated_at = now()
+                where tenant_id = %s
+                returning legal_name, display_name, tax_id, contact_name, contact_role,
+                          contact_email, contact_phone, billing_email, quotes_email,
+                          address_line1, address_line2, postal_code, city, region, country,
+                          quote_document_type, quote_template_document_id is not null as quote_template_available,
+                          disclaimers, warranty_terms, metadata
+                """,
+                (
+                    payload.legal_name, payload.display_name, payload.tax_id,
+                    payload.contact_name, payload.contact_role, payload.contact_email,
+                    payload.contact_phone, payload.billing_email, payload.quotes_email,
+                    payload.address_line1, payload.address_line2, payload.postal_code,
+                    payload.city, payload.region, payload.country,
+                    payload.quote_document_type, payload.disclaimers, payload.warranty_terms,
+                    POC_TENANT_ID,
+                ),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Ficha de empresa no encontrada")
+            return row
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.post("/profile/quote-template", status_code=status.HTTP_201_CREATED)
+def upload_quote_template(file: UploadFile = File(...), settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    filename = file.filename or "plantilla.pdf"
+    if file.content_type != "application/pdf" and not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="La plantilla debe ser un PDF")
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="La plantilla PDF está vacía")
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="La plantilla PDF no puede superar 10 MB")
+    try:
+        with db_session(settings) as conn:
+            document_type = conn.execute(
+                "select quote_document_type from public.horekia_tenant_profiles where tenant_id = %s",
+                (POC_TENANT_ID,),
+            ).fetchone()["quote_document_type"]
+            kind = "proforma_template" if document_type == "proforma" else "quote_template"
+            row = conn.execute(
+                """
+                insert into public.horekia_tenant_documents
+                  (tenant_id, kind, filename, mime_type, size_bytes, content)
+                values (%s, %s, %s, 'application/pdf', %s, %s)
+                returning id, filename, size_bytes
+                """,
+                (POC_TENANT_ID, kind, filename, len(content), content),
+            ).fetchone()
+            conn.execute(
+                """
+                update public.horekia_tenant_profiles
+                set quote_template_document_id = %s, updated_at = now()
+                where tenant_id = %s
+                """,
+                (row["id"], POC_TENANT_ID),
+            )
+            return {"id": row["id"], "filename": row["filename"], "size_bytes": row["size_bytes"]}
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.get("/profile/quote-template")
+def download_quote_template(settings: Settings = Depends(get_settings)) -> StreamingResponse:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                select d.filename, d.mime_type, d.content
+                from public.horekia_tenant_profiles p
+                join public.horekia_tenant_documents d
+                  on d.tenant_id = p.tenant_id and d.id = p.quote_template_document_id
+                where p.tenant_id = %s
+                """,
+                (POC_TENANT_ID,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="No hay plantilla PDF cargada")
+            return StreamingResponse(
+                io.BytesIO(row["content"]),
+                media_type=row["mime_type"],
+                headers={"Content-Disposition": f'attachment; filename="{row["filename"]}"'},
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise database_error(exc) from exc
 

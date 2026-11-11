@@ -36,3 +36,5 @@ La API y el backoffice se validan sin Docker; las migraciones y el aislamiento y
 El backoffice tendrá un Wizard de onboarding por tenant: aparecerá automáticamente en el primer acceso mientras falte la configuración inicial y seguirá disponible desde el menú `Wizard` para reanudarlo o ejecutarlo de nuevo.
 
 El Wizard permitirá cargar conocimiento ficticio del negocio mediante CSV. Los productos y precios alimentarán el catálogo y el motor determinista; categorías, patrones de venta, políticas y documentos servirán como contexto para Gemini, siempre aislados por tenant. La empresa final operará únicamente mediante el chatbot; el backoffice es el lugar de configuración y revisión.
+
+La ficha de empresa del Wizard también permite completar los datos comerciales del tenant y cargar la plantilla PDF de presupuesto o proforma que utilizarán las salidas posteriores.

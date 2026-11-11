@@ -120,6 +120,7 @@ Objetivo: que la empresa configure y opere Horekia sin asistencia técnica habit
 
 Entregables:
 - Acceso, empresa, usuarios y roles dentro de la instalación.
+- Ficha editable del tenant: nombre comercial, razón social, identificación fiscal, personas responsables, correos de contacto y presupuestos, dirección, disclaimers, garantía y plantilla PDF de presupuesto o proforma.
 - Wizard reanudable y accesible desde el menú `Wizard`: se abre automáticamente en el primer acceso si el tenant no ha completado la configuración inicial y permite continuar o volver a ejecutar los pasos de empresa, negocio, oferta, tarifas, reglas, fichas, asistente, simulación y canales.
 - En la versión completa, el estado del onboarding se guardará por tenant; abandonar el Wizard conservará el progreso y finalizarlo requerirá confirmación antes de activar la configuración. La POC actual recuerda la finalización en el navegador.
 - Carga de conocimiento por CSV desde el Wizard: productos, categorías, patrones de venta, políticas y documentación del negocio, con trazabilidad de importación y revisión antes de activar cambios.

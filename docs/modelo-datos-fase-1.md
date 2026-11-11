@@ -11,6 +11,8 @@ Todas las tablas propias llevan el prefijo `horekia_` y las tablas de negocio ll
 - `vocabulary`, `policies` y `faqs` guardan normalización y contenido revisable.
 - `knowledge_entries` es la base de conocimiento del tenant. Sus tipos incluyen `product`, `category`, `sales_pattern`, `policy`, `faq` y `document`; puede alimentarse manualmente o mediante CSV.
 - Una importación CSV registra su trazabilidad en `imports`, crea entradas consultables por Gemini y, para las filas de tipo `product`, replica los campos deterministas en `items`. El contenido narrativo orienta la interpretación, pero nunca sustituye a `price_rules` ni al motor de cálculo.
+- `tenant_profiles` conserva los datos que el tenant quiere mostrar o usar en sus presupuestos: nombre comercial y razón social, identificación fiscal, persona y cargo de contacto, correos, dirección, disclaimers, garantía, tipo de documento y referencia a la plantilla PDF.
+- `tenant_documents` guarda temporalmente las plantillas PDF en la POC. La futura migración a Storage privado mantendrá la misma autorización por tenant.
 - Los importes se almacenan en `numeric`, nunca en `float`; los presupuestos guardan `configuration_snapshot` y `calculation_snapshot` para no cambiar históricos.
 - `embeddings.embedding` usa `vector(768)`. Las entradas y los productos podrán generar embeddings con el modelo Gemini configurado para recuperar contexto por tenant; los importes seguirán saliendo de datos y reglas deterministas.
 
