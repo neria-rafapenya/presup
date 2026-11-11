@@ -6,7 +6,7 @@ Base FastAPI con configuración validada desde `.env`. El modo local mantiene `A
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e '.[dev]'
-uvicorn app.main:app --app-dir services/api --reload --port 8000
+yarn dev:api
 ```
 
-Comprobaciones: `GET /healthz` no revela configuración; `GET /readyz` comprueba el contrato y solo devuelve estados no sensibles.
+El script arranca sin watcher por defecto; usar `RELOAD=true yarn dev:api` solo en un entorno donde el watcher de archivos esté permitido. Comprobaciones: `GET /healthz` no revela configuración; `GET /readyz` comprueba el contrato y solo devuelve estados no sensibles.

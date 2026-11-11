@@ -5,29 +5,32 @@ do $$
 declare
   table_name text;
   tenant_tables text[] := array[
-    'tenant_users', 'tenant_settings', 'job_types', 'intake_schemas', 'items',
-    'item_variables', 'price_rules', 'computed_measures', 'vocabulary', 'policies',
-    'faqs', 'customers', 'consents', 'requests', 'messages', 'attachments',
-    'quotes', 'quote_lines', 'quote_events', 'corrections', 'embeddings',
-    'imports', 'usage_limits', 'usage_log'
+    'horekia_tenant_users', 'horekia_tenant_settings', 'horekia_job_types',
+    'horekia_intake_schemas', 'horekia_items', 'horekia_item_variables',
+    'horekia_price_rules', 'horekia_computed_measures', 'horekia_vocabulary',
+    'horekia_policies', 'horekia_faqs', 'horekia_customers', 'horekia_consents',
+    'horekia_requests', 'horekia_messages', 'horekia_attachments',
+    'horekia_quotes', 'horekia_quote_lines', 'horekia_quote_events',
+    'horekia_corrections', 'horekia_embeddings', 'horekia_imports',
+    'horekia_usage_limits', 'horekia_usage_log'
   ];
 begin
   foreach table_name in array tenant_tables loop
     execute format('alter table public.%I enable row level security', table_name);
     execute format(
-      'create policy %I on public.%I for select using (app.is_tenant_member(tenant_id))',
+      'create policy %I on public.%I for select using (horekia_app.is_tenant_member(tenant_id))',
       table_name || '_tenant_select', table_name
     );
     execute format(
-      'create policy %I on public.%I for insert with check (app.has_tenant_role(tenant_id, ARRAY[''owner'', ''editor'']::public.tenant_user_role[]))',
+      'create policy %I on public.%I for insert with check (horekia_app.has_tenant_role(tenant_id, ARRAY[''owner'', ''editor'']::public.horekia_tenant_user_role[]))',
       table_name || '_tenant_insert', table_name
     );
     execute format(
-      'create policy %I on public.%I for update using (app.has_tenant_role(tenant_id, ARRAY[''owner'', ''editor'']::public.tenant_user_role[])) with check (app.has_tenant_role(tenant_id, ARRAY[''owner'', ''editor'']::public.tenant_user_role[]))',
+      'create policy %I on public.%I for update using (horekia_app.has_tenant_role(tenant_id, ARRAY[''owner'', ''editor'']::public.horekia_tenant_user_role[])) with check (horekia_app.has_tenant_role(tenant_id, ARRAY[''owner'', ''editor'']::public.horekia_tenant_user_role[]))',
       table_name || '_tenant_update', table_name
     );
     execute format(
-      'create policy %I on public.%I for delete using (app.has_tenant_role(tenant_id, ARRAY[''owner'']::public.tenant_user_role[]))',
+      'create policy %I on public.%I for delete using (horekia_app.has_tenant_role(tenant_id, ARRAY[''owner'']::public.horekia_tenant_user_role[]))',
       table_name || '_tenant_delete', table_name
     );
   end loop;
@@ -36,65 +39,27 @@ $$;
 
 -- Los revisores pueden cambiar el estado de trabajo operativo; la API debe limitar
 -- las columnas editables y registrar el evento correspondiente.
-create policy requests_reviewer_update on public.requests
+create policy horekia_requests_reviewer_update on public.horekia_requests
   for update
-  using (app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.tenant_user_role[]))
-  with check (app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.tenant_user_role[]));
+  using (horekia_app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.horekia_tenant_user_role[]))
+  with check (horekia_app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.horekia_tenant_user_role[]));
 
-create policy quotes_reviewer_update on public.quotes
+create policy horekia_quotes_reviewer_update on public.horekia_quotes
   for update
-  using (app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.tenant_user_role[]))
-  with check (app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.tenant_user_role[]));
+  using (horekia_app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.horekia_tenant_user_role[]))
+  with check (horekia_app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.horekia_tenant_user_role[]));
 
-create policy corrections_reviewer_insert on public.corrections
+create policy horekia_corrections_reviewer_insert on public.horekia_corrections
   for insert
-  with check (app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.tenant_user_role[]));
+  with check (horekia_app.has_tenant_role(tenant_id, ARRAY['owner', 'editor', 'reviewer']::public.horekia_tenant_user_role[]));
 
-alter table public.tenants enable row level security;
-create policy tenants_member_select on public.tenants
-  for select using (app.is_tenant_member(id));
+alter table public.horekia_tenants enable row level security;
+create policy horekia_tenants_member_select on public.horekia_tenants
+  for select using (horekia_app.is_tenant_member(id));
 
-alter table public.sector_packs enable row level security;
-create policy sector_packs_authenticated_select on public.sector_packs
+alter table public.horekia_sector_packs enable row level security;
+create policy horekia_sector_packs_authenticated_select on public.horekia_sector_packs
   for select to authenticated using (true);
 
-insert into storage.buckets (id, name, public)
-values ('attachments', 'attachments', false)
-on conflict (id) do update set public = false;
-
-create policy attachments_private_read on storage.objects
-  for select to authenticated
-  using (
-    bucket_id = 'attachments'
-    and name ~ '^[0-9a-f-]{36}/'
-    and app.is_tenant_member(split_part(name, '/', 1)::uuid)
-  );
-
-create policy attachments_private_insert on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'attachments'
-    and name ~ '^[0-9a-f-]{36}/'
-    and app.has_tenant_role(split_part(name, '/', 1)::uuid, ARRAY['owner', 'editor']::public.tenant_user_role[])
-  );
-
-create policy attachments_private_update on storage.objects
-  for update to authenticated
-  using (
-    bucket_id = 'attachments'
-    and name ~ '^[0-9a-f-]{36}/'
-    and app.has_tenant_role(split_part(name, '/', 1)::uuid, ARRAY['owner', 'editor']::public.tenant_user_role[])
-  )
-  with check (
-    bucket_id = 'attachments'
-    and name ~ '^[0-9a-f-]{36}/'
-    and app.has_tenant_role(split_part(name, '/', 1)::uuid, ARRAY['owner', 'editor']::public.tenant_user_role[])
-  );
-
-create policy attachments_private_delete on storage.objects
-  for delete to authenticated
-  using (
-    bucket_id = 'attachments'
-    and name ~ '^[0-9a-f-]{36}/'
-    and app.has_tenant_role(split_part(name, '/', 1)::uuid, ARRAY['owner']::public.tenant_user_role[])
-  );
+-- Storage de Supabase no se modifica en esta instalación compartida. El acceso
+-- privado a adjuntos se implementará en una migración aislada tras autorización.

@@ -6,7 +6,7 @@
 - API FastAPI con `/healthz`, `/readyz` y validación segura de configuración.
 - Contratos JSON Schema para fichas, reglas de precio y presupuestos.
 - Migraciones Supabase ordenadas por dependencias para el modelo mínimo de Fase 1.
-- Claves foráneas compuestas con `tenant_id`, RLS por pertenencia y rol, y bucket privado de adjuntos.
+- Tablas propias con prefijo `horekia_`, claves foráneas compuestas con `tenant_id` y RLS por pertenencia y rol.
 - Datos ficticios mínimos para dos empresas y esqueleto de prueba de aislamiento.
 - Compose de desarrollo para la API y matriz de versiones documentada.
 
@@ -23,7 +23,7 @@
 
 ## Validación realizada
 
-Se han comprobado sintaxis Python, JSON, contrato de variables, exclusión de secretos, instalación Yarn, typecheck Expo, configuración Compose y consistencia de documentación. No se han ejecutado `supabase db reset`, pruebas RLS ni `docker compose up`: por decisión del usuario no se usará Docker/Supabase local en este macOS. No se ha usado ninguna cuenta AWS, Supabase remota o Gemini.
+Se han comprobado sintaxis Python, JSON, contrato de variables, exclusión de secretos, instalación Yarn, typecheck Expo, configuración Compose, tests FastAPI, arranque de la API y bundles Web de backoffice y chat. Las URLs locales respondieron `200` y `/healthz` respondió correctamente. No se han ejecutado `supabase db reset`, pruebas RLS ni `docker compose up`: por decisión del usuario no se usará Docker/Supabase local en este macOS. No se ha usado ninguna cuenta AWS, Supabase remota o Gemini.
 
 ## Comandos de validación cuando el entorno esté disponible
 
@@ -42,3 +42,7 @@ docker compose -f infra/docker-compose.yml up --build api
 ```
 
 Las credenciales de `.env` deben seguir vacías y `AI_MOCK=true` durante toda esta fase. El resultado de cada comando se debe registrar antes de cerrar Fase 1. No ejecutar esos comandos en el Mac local actual.
+
+## Cierre
+
+La implementación de API, apps y migraciones está registrada, pero Fase 1 no se declara cerrada todavía: falta ejecutar la prueba de dos usuarios y aislamiento RLS en una Supabase desechable autorizada.

@@ -1,8 +1,8 @@
 # Modelo de datos de Fase 1
 
-Las migraciones de `supabase/migrations` están ordenadas por dependencias: extensiones y empresa, configuración y catálogo, peticiones y conversación, presupuestos y operaciones, y finalmente RLS/Storage.
+Las migraciones de `supabase/migrations` están ordenadas por dependencias: extensiones y empresa, configuración y catálogo, peticiones y conversación, presupuestos y operaciones, y finalmente RLS de las tablas Horekia. En la base compartida no se modifican las tablas `storage.*` de Supabase.
 
-Todas las tablas de negocio llevan `tenant_id`. Las relaciones entre tablas de negocio usan claves foráneas compuestas `(tenant_id, id)` para impedir que una fila de una empresa apunte a una fila de otra. `sector_packs` es global y no contiene datos operativos de una empresa.
+Todas las tablas propias llevan el prefijo `horekia_` y las tablas de negocio llevan `tenant_id`. Las relaciones entre tablas de negocio usan claves foráneas compuestas `(tenant_id, id)` para impedir que una fila de una empresa apunte a una fila de otra. `horekia_sector_packs` es global dentro del espacio de nombres de Horekia y no contiene datos operativos de una empresa.
 
 ## Configuración y cálculo
 
@@ -14,9 +14,9 @@ Todas las tablas de negocio llevan `tenant_id`. Las relaciones entre tablas de n
 
 ## Acceso
 
-`app.is_tenant_member` y `app.has_tenant_role` consultan la membresía de `auth.uid()`. RLS permite lectura a miembros activos, escritura de configuración a owner/editor y revisión operativa a reviewer mediante políticas específicas. El acceso público al chat no lee tablas directamente: se añadirá en Fase 3 mediante backend y sesiones limitadas.
+`horekia_app.is_tenant_member` y `horekia_app.has_tenant_role` consultan la membresía de `auth.uid()`. RLS permite lectura a miembros activos, escritura de configuración a owner/editor y revisión operativa a reviewer mediante políticas específicas. El acceso público al chat no lee tablas directamente: se añadirá en Fase 3 mediante backend y sesiones limitadas.
 
-El bucket `attachments` es privado. La ruta debe comenzar por el UUID de tenant y Storage aplica la misma pertenencia y roles que las tablas.
+`horekia_attachments` guarda la relación con los archivos y su ruta, pero esta migración no crea buckets ni políticas en `storage.*` para no modificar tablas compartidas de Supabase. Esa integración se hará mediante una migración aislada tras autorización.
 
 ## Inicialización y validación
 

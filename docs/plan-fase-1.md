@@ -13,7 +13,7 @@ Requisitos comprobados al incorporar la preparación: la rama `fase-0/preparacio
 3. Añadir healthcheck local sin revelar configuración; scripts de arranque y validación de configuración al inicio. Instalar únicamente las dependencias necesarias para el stack autorizado.
 4. Definir fichas, reglas, procedencia de valores y representación monetaria. Diseñar orden de reglas y versiones de configuración, sin implementar todavía el motor.
 5. Crear migraciones por dependencias: empresa y miembros; configuración y catálogo; peticiones y conversaciones; presupuestos e historial; importaciones, correcciones, consumo y recuperación.
-6. Añadir RLS por empresa y rol; evitar claves foráneas que permitan cruces de tenant; políticas de Storage. Acceso público de chat mediante backend, sin lectura anónima general de tablas.
+6. Añadir RLS por empresa y rol; evitar claves foráneas que permitan cruces de tenant. En la base compartida, no modificar `storage.*` sin autorización separada. Acceso público de chat mediante backend, sin lectura anónima general de tablas.
 7. Preparar datos ficticios mínimos y pruebas de aislamiento para ejecutarlas en CI o en una base desechable autorizada. No cargar tarifas reales ni activar Gemini.
 8. Documentar tablas, relaciones, inicialización de una única empresa y comandos exactos de validación. Actualizar README.
 
@@ -40,4 +40,4 @@ Resumen de cambios, comandos probados, resultados de aislamiento, criterios pend
 
 ## Estado de esta implementación
 
-La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. El cierre sigue pendiente: Docker no tiene daemon disponible y Supabase CLI no está en PATH, por lo que aún no se han ejecutado las migraciones, las pruebas RLS, los builds de las apps ni el arranque del compose. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md).
+La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. La API y ambos bundles Web arrancan y responden localmente sin Docker. El cierre sigue pendiente únicamente de aplicar las migraciones y ejecutar pruebas RLS con dos usuarios en una Supabase desechable autorizada. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md).

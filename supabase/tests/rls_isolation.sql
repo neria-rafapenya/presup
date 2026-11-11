@@ -7,6 +7,6 @@
 -- set role authenticated;
 -- select set_config('request.jwt.claim.sub', :'user_one', true);
 -- select set_config('request.jwt.claim.role', 'authenticated', true);
--- select count(*) from public.job_types
+-- select count(*) from public.horekia_job_types
 --   where tenant_id = '00000000-0000-0000-0000-000000000001';
 -- La lectura del tenant 2 debe devolver cero y un insert con tenant 2 debe ser rechazado.
