@@ -654,6 +654,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
   const [designerError, setDesignerError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [designerLoading, setDesignerLoading] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const [highlightTarget, setHighlightTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
@@ -676,6 +677,8 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     let active = true;
     setDesignerLoading(true);
     setAdvancedFields({});
+    setSaveMessage(null);
+    setDesignerError(null);
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
       setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
@@ -741,7 +744,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       const saved = await onSave(service.id, { ...draft, fields, rules, measures });
       if (saved) {
         setDesignerError(null);
-        onClose();
+        setSaveMessage("Patrón guardado. Puedes seguir editándolo.");
       } else {
         setDesignerError("No se ha podido guardar el patrón. Revisa la conexión con la API e inténtalo de nuevo.");
       }
@@ -776,8 +779,9 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text>
             <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={setMeasuresText} multiline />
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
+            {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}
           </ScrollView>
-          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void save()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar patrón"}</Text></Pressable></View>
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cerrar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void save()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar patrón"}</Text></Pressable></View>
           {designerLoading ? <View style={styles.designerLoadingOverlay}><ActivityIndicator size="large" color="#258269" /><Text style={styles.designerLoadingText}>Cargando diseño…</Text></View> : null}
         </View>
       </View>
@@ -1032,6 +1036,7 @@ const styles = StyleSheet.create({
   refreshButton: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
   refreshLabel: { color: "#285246", fontSize: 13, fontWeight: "600" },
   error: { color: "#a53d35", backgroundColor: "#fdecea", borderRadius: 8, padding: 14, marginBottom: 18 },
+  success: { color: "#216c55", backgroundColor: "#eaf6ef", borderRadius: 8, padding: 12, marginTop: 10 },
   loader: { marginTop: 80 },
   hero: { backgroundColor: "#dff0e5", borderRadius: 16, padding: 26, marginBottom: 18 },
   heroTitle: { color: "#17332d", fontSize: 23, fontWeight: "800", maxWidth: 650 },
