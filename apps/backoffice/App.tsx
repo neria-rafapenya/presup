@@ -1,9 +1,10 @@
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -587,6 +588,7 @@ function Services({ services, onCreate, onDelete, onLoadBlueprint, onSaveBluepri
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Servicios y fichas</Text>
         <Text style={styles.wizardText}>Los servicios definen las líneas de negocio que el tenant puede presupuestar.</Text>
+        <TutorialVideo />
         <Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable>
       </View>
       <View style={styles.panel}>
@@ -598,6 +600,11 @@ function Services({ services, onCreate, onDelete, onLoadBlueprint, onSaveBluepri
       {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
+}
+
+function TutorialVideo() {
+  if (Platform.OS !== "web") return <Text style={styles.listMeta}>El tutorial visual está disponible en la versión web del backoffice.</Text>;
+  return <View style={styles.tutorialBox}><Text style={styles.tutorialTitle}>¿Cómo crear un servicio?</Text><Text style={styles.listMeta}>Mira este ejemplo de catering y adapta los pasos a tu negocio.</Text>{createElement("video", { controls: true, playsInline: true, preload: "metadata", src: "/tutorial-crear-servicio-catering.mp4", style: styles.tutorialVideo, "aria-label": "Tutorial visual para crear un servicio de catering" })}</View>;
 }
 
 function DeleteServiceModal({ service, onClose, onConfirm, saving }: { service: JobType | null; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean }) {
@@ -1031,6 +1038,9 @@ const styles = StyleSheet.create({
   wizardActions: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24 },
   serviceSummaryRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   serviceActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  tutorialBox: { backgroundColor: "#f7faf8", borderWidth: 1, borderColor: "#dbe6df", borderRadius: 12, padding: 16, marginTop: 18, marginBottom: 8 },
+  tutorialTitle: { color: "#17332d", fontSize: 16, fontWeight: "800", marginBottom: 4 },
+  tutorialVideo: { width: "100%", height: 280, marginTop: 12, borderRadius: 8, backgroundColor: "#17332d" },
   smallButton: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8 },
   smallButtonLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   knowledgeBox: { backgroundColor: "#f7f9fc", borderRadius: 10, padding: 16, marginTop: 18 },
