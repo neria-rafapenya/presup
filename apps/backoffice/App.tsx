@@ -697,7 +697,9 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     return () => {
       active = false;
     };
-  }, [visible, service.id, onLoad]);
+  // onLoad is recreated by the parent when saving; that must not reload the
+  // blueprint or show the initial loading overlay again.
+  }, [visible, service.id]);
 
   useEffect(() => {
     if (!scrollTarget) return;
