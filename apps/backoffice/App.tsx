@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,6 +27,10 @@ type Summary = {
 };
 
 type JobType = { id: string; slug: string; name: string; description?: string | null; status: string };
+type NewService = { slug: string; name: string; description: string };
+type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
+type KnowledgeSummary = { total: number; by_kind: { kind: string; count: number }[] };
+type KnowledgeEntry = { id: string; kind: string; title: string; source_name?: string | null };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
@@ -48,21 +53,26 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>(() => (isWizardCompleted() ? "dashboard" : "wizard"));
   const [summary, setSummary] = useState<Summary | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
+  const [knowledgeSummary, setKnowledgeSummary] = useState<KnowledgeSummary>({ total: 0, by_kind: [] });
+  const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newService, setNewService] = useState({ slug: "", name: "", description: "" });
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextServices] = await Promise.all([
+      const [nextSummary, nextServices, nextKnowledgeSummary, nextKnowledgeEntries] = await Promise.all([
         api<Summary>("/api/v1/backoffice/summary"),
         api<JobType[]>("/api/v1/backoffice/job-types"),
+        api<KnowledgeSummary>("/api/v1/backoffice/knowledge/summary"),
+        api<KnowledgeEntry[]>("/api/v1/backoffice/knowledge/entries"),
       ]);
       setSummary(nextSummary);
       setServices(nextServices);
+      setKnowledgeSummary(nextKnowledgeSummary);
+      setKnowledgeEntries(nextKnowledgeEntries);
     } catch {
       setError("No se ha podido conectar con la API de Horekia.");
     } finally {
@@ -91,8 +101,8 @@ export default function App() {
     }
   };
 
-  const createService = async () => {
-    if (!newService.slug || !newService.name) return;
+  const createService = async (newService: NewService) => {
+    if (!newService.slug || !newService.name) return false;
     setSaving(true);
     setError(null);
     try {
@@ -100,10 +110,29 @@ export default function App() {
         method: "POST",
         body: JSON.stringify(newService),
       });
-      setNewService({ slug: "", name: "", description: "" });
       await load();
+      return true;
     } catch {
       setError("No se ha podido crear el servicio. Revisa que el slug no esté repetido.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const importKnowledge = async (sourceName: string, rows: KnowledgeRow[]) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api("/api/v1/backoffice/knowledge/import", {
+        method: "POST",
+        body: JSON.stringify({ source_name: sourceName, rows }),
+      });
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido importar el CSV de conocimiento.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -146,14 +175,14 @@ export default function App() {
         ) : summary ? (
           <>
             {screen === "wizard" ? (
-              <Wizard summary={summary} services={services} onComplete={() => setScreen("dashboard")} onGoTo={setScreen} />
+              <Wizard summary={summary} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onCreateService={createService} onImportKnowledge={importKnowledge} saving={saving} />
             ) : null}
             {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
             {screen === "company" ? (
               <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
             ) : null}
             {screen === "services" ? (
-              <Services services={services} newService={newService} setNewService={setNewService} onCreate={createService} saving={saving} />
+              <Services services={services} onCreate={createService} saving={saving} />
             ) : null}
             {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
             {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
@@ -192,9 +221,10 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, services, onComplete, onGoTo }: { summary: Summary; services: JobType[]; onComplete: () => void; onGoTo: (screen: Screen) => void }) {
+function Wizard({ summary, services, knowledgeSummary, knowledgeEntries, onComplete, onCreateService, onImportKnowledge, saving }: { summary: Summary; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onCreateService: (service: NewService) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(0);
-  const steps = ["Empresa", "Oferta", "Revisión"];
+  const [serviceModalOpen, setServiceModalOpen] = useState(false);
+  const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
     if (typeof window !== "undefined") window.localStorage.setItem(WIZARD_STORAGE_KEY, "true");
     onComplete();
@@ -222,15 +252,22 @@ function Wizard({ summary, services, onComplete, onGoTo }: { summary: Summary; s
         {step === 1 ? (
           <>
             <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
-            <Text style={styles.wizardText}>Ya hay {services.length} servicio(s) preparado(s). Puedes continuar y ampliar el catálogo desde Servicios y fichas.</Text>
+            <Text style={styles.wizardText}>Define qué vende o qué trabajos realiza tu empresa. Los servicios se añaden aquí sin abandonar el Wizard.</Text>
             {services.slice(0, 3).map((service) => <Text style={styles.wizardBullet} key={service.id}>• {service.name}</Text>)}
-            <Pressable style={styles.secondaryButton} onPress={() => onGoTo("services")}><Text style={styles.secondaryLabel}>Editar servicios</Text></Pressable>
+            <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
           </>
         ) : null}
         {step === 2 ? (
           <>
-            <Text style={styles.panelTitle}>3. Revisar y terminar</Text>
-            <Text style={styles.wizardText}>La revisión humana está {summary.settings.review_required ? "activa" : "desactivada"} y la validez de los presupuestos es de {summary.settings.quote_validity_days} días.</Text>
+            <Text style={styles.panelTitle}>3. Base de conocimiento</Text>
+            <Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>
+            <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImportKnowledge} saving={saving} />
+          </>
+        ) : null}
+        {step === 3 ? (
+          <>
+            <Text style={styles.panelTitle}>4. Revisar y terminar</Text>
+            <Text style={styles.wizardText}>La revisión humana está {summary.settings.review_required ? "activa" : "desactivada"}, hay {services.length} servicio(s) y {knowledgeSummary.total} entrada(s) de conocimiento.</Text>
             <Text style={styles.wizardText}>Al terminar podrás volver a ejecutar este Wizard desde el menú cuando quieras.</Text>
           </>
         ) : null}
@@ -239,8 +276,85 @@ function Wizard({ summary, services, onComplete, onGoTo }: { summary: Summary; s
           {step < steps.length - 1 ? <Pressable style={styles.primaryButton} onPress={() => setStep(step + 1)}><Text style={styles.primaryLabel}>Continuar</Text></Pressable> : <Pressable style={styles.primaryButton} onPress={finish}><Text style={styles.primaryLabel}>Terminar configuración</Text></Pressable>}
         </View>
       </View>
+      <ServiceModal visible={serviceModalOpen} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
     </View>
   );
+}
+
+function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
+  const [sourceName, setSourceName] = useState("");
+  const [rows, setRows] = useState<KnowledgeRow[]>([]);
+
+  const chooseCsv = () => {
+    if (typeof document === "undefined") return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setSourceName(file.name);
+      setRows(parseKnowledgeCsv(await file.text()));
+    };
+    input.click();
+  };
+
+  const importRows = async () => {
+    if (!sourceName || rows.length === 0) return;
+    if (await onImport(sourceName, rows)) setRows([]);
+  };
+
+  return (
+    <View style={styles.knowledgeBox}>
+      <Text style={styles.fieldLabel}>CSV de conocimiento</Text>
+      <Text style={styles.listMeta}>Columnas admitidas: title/name, kind, content/description, code/sku, category, unit, base_price y currency.</Text>
+      <Pressable style={styles.secondaryButton} onPress={chooseCsv}><Text style={styles.secondaryLabel}>{sourceName || "Seleccionar CSV"}</Text></Pressable>
+      {rows.length > 0 ? <Text style={styles.wizardText}>{rows.length} fila(s) listas para importar.</Text> : null}
+      <Pressable style={styles.primaryButton} onPress={importRows} disabled={saving || rows.length === 0}><Text style={styles.primaryLabel}>{saving ? "Importando…" : "Importar conocimiento"}</Text></Pressable>
+      <Text style={styles.knowledgeCount}>Base actual: {knowledgeSummary.total} entradas · {knowledgeEntries.slice(0, 3).map((entry) => entry.title).join(", ") || "sin entradas"}</Text>
+    </View>
+  );
+}
+
+function parseKnowledgeCsv(text: string): KnowledgeRow[] {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const delimiter = lines[0].includes(";") && !lines[0].includes(",") ? ";" : ",";
+  const headers = splitCsvLine(lines[0], delimiter).map((header) => header.trim().toLowerCase().replace(/[áéíóú]/g, (letter) => ({ á: "a", é: "e", í: "i", ó: "o", ú: "u" }[letter] ?? letter)));
+  return lines.slice(1).map((line) => {
+    const values = splitCsvLine(line, delimiter);
+    const record = Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""]));
+    const known = new Set(["kind", "tipo", "title", "name", "nombre", "producto", "content", "description", "descripcion", "code", "sku", "codigo", "category", "categoria", "unit", "unidad", "base_price", "price", "precio", "currency", "moneda"]);
+    const metadata = Object.fromEntries(Object.entries(record).filter(([key, value]) => !known.has(key) && value));
+    const priceValue = record.base_price || record.price || record.precio;
+    const price = priceValue ? Number(priceValue.replace(",", ".")) : undefined;
+    return {
+      kind: record.kind || record.tipo || "product",
+      title: record.title || record.name || record.nombre || record.producto || "Entrada sin título",
+      content: record.content || record.description || record.descripcion || "",
+      code: record.code || record.sku || record.codigo || undefined,
+      category: record.category || record.categoria || undefined,
+      unit: record.unit || record.unidad || "unit",
+      base_price: Number.isFinite(price) ? price : undefined,
+      currency: (record.currency || record.moneda || "EUR").toUpperCase(),
+      metadata,
+    };
+  });
+}
+
+function splitCsvLine(line: string, delimiter: string): string[] {
+  const values: string[] = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"' && line[index + 1] === '"') { value += '"'; index += 1; }
+    else if (character === '"') quoted = !quoted;
+    else if (character === delimiter && !quoted) { values.push(value); value = ""; }
+    else value += character;
+  }
+  values.push(value);
+  return values;
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
@@ -270,23 +384,47 @@ function Company({ summary, setSummary, onSave, saving }: { summary: Summary; se
   );
 }
 
-function Services({ services, newService, setNewService, onCreate, saving }: { services: JobType[]; newService: { slug: string; name: string; description: string }; setNewService: (value: { slug: string; name: string; description: string }) => void; onCreate: () => void; saving: boolean }) {
+function Services({ services, onCreate, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
+  const [modalVisible, setModalVisible] = useState(false);
   return (
     <View>
       <View style={styles.panel}>
-        <Text style={styles.panelTitle}>Nuevo servicio</Text>
-        <View style={styles.formGrid}>
-          <Field label="Slug" value={newService.slug} onChangeText={(slug) => setNewService({ ...newService, slug })} />
-          <Field label="Nombre" value={newService.name} onChangeText={(name) => setNewService({ ...newService, name })} />
-        </View>
-        <Field label="Descripción" value={newService.description} onChangeText={(description) => setNewService({ ...newService, description })} />
-        <Pressable style={styles.primaryButton} onPress={onCreate} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable>
+        <Text style={styles.panelTitle}>Servicios y fichas</Text>
+        <Text style={styles.wizardText}>Los servicios definen las líneas de negocio que el tenant puede presupuestar.</Text>
+        <Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable>
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Servicios configurados</Text>
         {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Text style={styles.listArrow}>›</Text></View>)}
       </View>
+      <ServiceModal visible={modalVisible} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
     </View>
+  );
+}
+
+function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
+  const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "" });
+  const submit = async () => {
+    if (await onCreate(draft)) {
+      setDraft({ slug: "", name: "", description: "" });
+      onClose();
+    }
+  };
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}><Text style={styles.panelTitle}>Añadir servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
+          <Text style={styles.wizardText}>Añádelo sin salir del contexto del Wizard o del catálogo.</Text>
+          <View style={styles.formGrid}>
+            <Field label="Slug" value={draft.slug} onChangeText={(slug) => setDraft({ ...draft, slug })} />
+            <Field label="Nombre" value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} />
+          </View>
+          <Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -346,8 +484,14 @@ const styles = StyleSheet.create({
   stepLabel: { color: "#718078", fontSize: 12, marginTop: 7 },
   stepLabelActive: { color: "#258269", fontWeight: "700" },
   wizardActions: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24 },
+  knowledgeBox: { backgroundColor: "#f7f9fc", borderRadius: 10, padding: 16, marginTop: 18 },
+  knowledgeCount: { color: "#61736a", fontSize: 12, lineHeight: 18, marginTop: 14 },
   secondaryButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 16, paddingVertical: 11, marginTop: 16 },
   secondaryLabel: { color: "#285246", fontSize: 14, fontWeight: "600" },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(23, 51, 45, 0.36)", alignItems: "center", justifyContent: "center", padding: 24 },
+  modalCard: { width: "100%", maxWidth: 620, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  modalClose: { color: "#52645b", fontSize: 28, lineHeight: 28, paddingHorizontal: 6 },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 18 },
   metric: { backgroundColor: "#ffffff", borderRadius: 12, padding: 20, minWidth: 150, flexGrow: 1, flexBasis: "20%", borderWidth: 1, borderColor: "#e1e8e3" },
   metricValue: { color: "#17332d", fontSize: 28, fontWeight: "800" },

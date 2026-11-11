@@ -105,6 +105,7 @@ Objetivo: completar la ficha necesaria para presupuestar.
 Entregables:
 - Adaptadores simulado y Gemini con salida estructurada validada, visión y embeddings configurables.
 - Clasificación, recuperación de contexto de la empresa, extracción, normalización y detección de datos pendientes.
+- Recuperación aislada por tenant desde catálogo, patrones de venta, políticas, FAQs y documentos importados; el LLM propone interpretación y preguntas, no precios.
 - Preguntas derivadas de la ficha, con un máximo de dos a cuatro por mensaje y opciones cerradas donde proceda.
 - Procedencia de cada interpretación, consentimiento, contacto y derivación a persona.
 - Políticas aplicadas por el backend y presentación de importes exclusivamente desde el motor.
@@ -121,6 +122,8 @@ Entregables:
 - Acceso, empresa, usuarios y roles dentro de la instalación.
 - Wizard reanudable y accesible desde el menú `Wizard`: se abre automáticamente en el primer acceso si el tenant no ha completado la configuración inicial y permite continuar o volver a ejecutar los pasos de empresa, negocio, oferta, tarifas, reglas, fichas, asistente, simulación y canales.
 - En la versión completa, el estado del onboarding se guardará por tenant; abandonar el Wizard conservará el progreso y finalizarlo requerirá confirmación antes de activar la configuración. La POC actual recuerda la finalización en el navegador.
+- Carga de conocimiento por CSV desde el Wizard: productos, categorías, patrones de venta, políticas y documentación del negocio, con trazabilidad de importación y revisión antes de activar cambios.
+- Alta de servicios y catálogo mediante modales dentro del Wizard, sin perder el contexto de configuración.
 - Edición manual completa de configuración; las propuestas de IA se muestran antes de guardar.
 - Bandeja, revisión de conversación y adjuntos, campos interpretados, edición de líneas y aprobación.
 - Pantallas de configuración, importaciones, consumo y métricas operativas.

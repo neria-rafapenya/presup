@@ -1,6 +1,6 @@
 # Modelo de datos de Fase 1
 
-Las migraciones de `supabase/migrations` están ordenadas por dependencias: extensiones y empresa, configuración y catálogo, peticiones y conversación, presupuestos y operaciones, y finalmente RLS de las tablas Horekia. En la base compartida no se modifican las tablas `storage.*` de Supabase.
+Las migraciones de `supabase/migrations` están ordenadas por dependencias: extensiones y empresa, configuración y catálogo, peticiones y conversación, presupuestos y operaciones, RLS y, desde `0006`, conocimiento del negocio. En la base compartida no se modifican las tablas `storage.*` de Supabase.
 
 Todas las tablas propias llevan el prefijo `horekia_` y las tablas de negocio llevan `tenant_id`. Las relaciones entre tablas de negocio usan claves foráneas compuestas `(tenant_id, id)` para impedir que una fila de una empresa apunte a una fila de otra. `horekia_sector_packs` es global dentro del espacio de nombres de Horekia y no contiene datos operativos de una empresa.
 
@@ -9,8 +9,10 @@ Todas las tablas propias llevan el prefijo `horekia_` y las tablas de negocio ll
 - `tenant_settings` conserva moneda, IVA, revisión humana y versión de configuración.
 - `job_types`, `intake_schemas`, `items`, `item_variables`, `price_rules` y `computed_measures` representan la ficha y las reglas; el motor determinista se implementará en Fase 2.
 - `vocabulary`, `policies` y `faqs` guardan normalización y contenido revisable.
+- `knowledge_entries` es la base de conocimiento del tenant. Sus tipos incluyen `product`, `category`, `sales_pattern`, `policy`, `faq` y `document`; puede alimentarse manualmente o mediante CSV.
+- Una importación CSV registra su trazabilidad en `imports`, crea entradas consultables por Gemini y, para las filas de tipo `product`, replica los campos deterministas en `items`. El contenido narrativo orienta la interpretación, pero nunca sustituye a `price_rules` ni al motor de cálculo.
 - Los importes se almacenan en `numeric`, nunca en `float`; los presupuestos guardan `configuration_snapshot` y `calculation_snapshot` para no cambiar históricos.
-- `embeddings.embedding` usa `vector(768)`. Es el contrato inicial documentado para el modelo de embeddings que se configure antes de activar IA real; con `AI_MOCK=true` no se generan vectores.
+- `embeddings.embedding` usa `vector(768)`. Las entradas y los productos podrán generar embeddings con el modelo Gemini configurado para recuperar contexto por tenant; los importes seguirán saliendo de datos y reglas deterministas.
 
 ## Acceso
 

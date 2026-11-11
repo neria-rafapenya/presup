@@ -60,6 +60,15 @@ def apply_schema(conn: psycopg.Connection) -> None:
         conn.execute(SEED.read_text())
 
 
+def apply_upgrades(conn: psycopg.Connection) -> None:
+    """Apply idempotent migrations added after the original POC bootstrap."""
+
+    upgrades = [migration for migration in MIGRATIONS if migration.name >= "0006_"]
+    with conn.transaction():
+        for migration in upgrades:
+            conn.execute(migration.read_text())
+
+
 def assert_rls(conn: psycopg.Connection) -> None:
     with conn.transaction():
         conn.execute(
@@ -82,7 +91,7 @@ def assert_rls(conn: psycopg.Connection) -> None:
             "select count(*) from public.horekia_job_types where tenant_id = %s::uuid",
             (TENANT_TWO,),
         ).fetchone()[0]
-        if own != 1 or foreign != 0:
+        if own < 1 or foreign != 0:
             raise AssertionError(f"aislamiento de lectura inválido: own={own}, foreign={foreign}")
 
         try:
@@ -108,13 +117,14 @@ def assert_rls(conn: psycopg.Connection) -> None:
             "select count(*) from public.horekia_job_types where tenant_id = %s::uuid",
             (TENANT_ONE,),
         ).fetchone()[0]
-        if own_two != 1 or foreign_two != 0:
+        if own_two < 1 or foreign_two != 0:
             raise AssertionError(f"aislamiento de lectura inválido: own={own_two}, foreign={foreign_two}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true", help="aplica migraciones y seed si no hay tablas horekia_*")
+    parser.add_argument("--upgrade", action="store_true", help="aplica migraciones incrementales idempotentes")
     args = parser.parse_args()
 
     with psycopg.connect(database_url(), connect_timeout=15, sslmode="require") as conn:
@@ -123,6 +133,9 @@ def main() -> int:
         if args.apply:
             apply_schema(conn)
             print("Migraciones y seed Horekia: aplicados")
+        if args.upgrade:
+            apply_upgrades(conn)
+            print("Migraciones incrementales Horekia: aplicadas")
         assert_rls(conn)
         print("RLS: lecturas propias, lecturas cruzadas denegadas y escritura cruzada denegada")
     return 0

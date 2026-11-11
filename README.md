@@ -34,3 +34,5 @@ No copiar credenciales de otros proyectos. El `.env` local ya existe; en una cop
 La API y el backoffice se validan sin Docker; las migraciones y el aislamiento ya se probaron en el proyecto Supabase autorizado usando únicamente el prefijo `horekia_`. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable.
 
 El backoffice tendrá un Wizard de onboarding por tenant: aparecerá automáticamente en el primer acceso mientras falte la configuración inicial y seguirá disponible desde el menú `Wizard` para reanudarlo o ejecutarlo de nuevo.
+
+El Wizard permitirá cargar conocimiento ficticio del negocio mediante CSV. Los productos y precios alimentarán el catálogo y el motor determinista; categorías, patrones de venta, políticas y documentos servirán como contexto para Gemini, siempre aislados por tenant. La empresa final operará únicamente mediante el chatbot; el backoffice es el lugar de configuración y revisión.
