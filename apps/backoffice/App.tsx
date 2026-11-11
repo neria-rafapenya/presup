@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "dashboard" | "company" | "services" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "services" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -28,6 +28,12 @@ type Summary = {
 type JobType = { id: string; slug: string; name: string; description?: string | null; status: string };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
+const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
+
+function isWizardCompleted() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(WIZARD_STORAGE_KEY) === "true";
+}
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -39,7 +45,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("dashboard");
+  const [screen, setScreen] = useState<Screen>(() => (isWizardCompleted() ? "dashboard" : "wizard"));
   const [summary, setSummary] = useState<Summary | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +116,7 @@ export default function App() {
         <Text style={styles.brand}>HOREKIA</Text>
         <Text style={styles.brandSub}>BACKOFFICE</Text>
         <View style={styles.nav}>
+          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => setScreen("wizard")} />
           <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => setScreen("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => setScreen("company")} />
           <NavButton label="Servicios y fichas" active={screen === "services"} onPress={() => setScreen("services")} />
@@ -138,6 +145,9 @@ export default function App() {
           <ActivityIndicator color="#147d68" size="large" style={styles.loader} />
         ) : summary ? (
           <>
+            {screen === "wizard" ? (
+              <Wizard summary={summary} services={services} onComplete={() => setScreen("dashboard")} onGoTo={setScreen} />
+            ) : null}
             {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
             {screen === "company" ? (
               <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
@@ -177,6 +187,57 @@ function Dashboard({ summary }: { summary: Summary }) {
         <StatusRow label="Base de datos" value="Conectada" good />
         <StatusRow label="IA" value="Gemini configurado" good />
         <StatusRow label="Revisión humana" value={summary.settings.review_required ? "Activa" : "Desactivada"} good={summary.settings.review_required} />
+      </View>
+    </View>
+  );
+}
+
+function Wizard({ summary, services, onComplete, onGoTo }: { summary: Summary; services: JobType[]; onComplete: () => void; onGoTo: (screen: Screen) => void }) {
+  const [step, setStep] = useState(0);
+  const steps = ["Empresa", "Oferta", "Revisión"];
+  const finish = () => {
+    if (typeof window !== "undefined") window.localStorage.setItem(WIZARD_STORAGE_KEY, "true");
+    onComplete();
+  };
+
+  return (
+    <View>
+      <View style={styles.wizardHero}>
+        <Text style={styles.wizardEyebrow}>PRIMERA CONFIGURACIÓN</Text>
+        <Text style={styles.wizardTitle}>Configura {summary.tenant.name} paso a paso</Text>
+        <Text style={styles.wizardText}>Puedes salir y volver desde el menú Wizard en cualquier momento.</Text>
+      </View>
+      <View style={styles.stepper}>
+        {steps.map((label, index) => <View style={styles.step} key={label}><View style={[styles.stepDot, index <= step && styles.stepDotActive]}><Text style={styles.stepNumber}>{index + 1}</Text></View><Text style={[styles.stepLabel, index === step && styles.stepLabelActive]}>{label}</Text></View>)}
+      </View>
+      <View style={styles.panel}>
+        {step === 0 ? (
+          <>
+            <Text style={styles.panelTitle}>1. Datos de empresa</Text>
+            <Text style={styles.wizardText}>Esta instalación está vinculada a:</Text>
+            <Text style={styles.wizardTenant}>{summary.tenant.name}</Text>
+            <Text style={styles.listMeta}>Idioma inicial: {summary.tenant.default_locale}</Text>
+          </>
+        ) : null}
+        {step === 1 ? (
+          <>
+            <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
+            <Text style={styles.wizardText}>Ya hay {services.length} servicio(s) preparado(s). Puedes continuar y ampliar el catálogo desde Servicios y fichas.</Text>
+            {services.slice(0, 3).map((service) => <Text style={styles.wizardBullet} key={service.id}>• {service.name}</Text>)}
+            <Pressable style={styles.secondaryButton} onPress={() => onGoTo("services")}><Text style={styles.secondaryLabel}>Editar servicios</Text></Pressable>
+          </>
+        ) : null}
+        {step === 2 ? (
+          <>
+            <Text style={styles.panelTitle}>3. Revisar y terminar</Text>
+            <Text style={styles.wizardText}>La revisión humana está {summary.settings.review_required ? "activa" : "desactivada"} y la validez de los presupuestos es de {summary.settings.quote_validity_days} días.</Text>
+            <Text style={styles.wizardText}>Al terminar podrás volver a ejecutar este Wizard desde el menú cuando quieras.</Text>
+          </>
+        ) : null}
+        <View style={styles.wizardActions}>
+          {step > 0 ? <Pressable style={styles.secondaryButton} onPress={() => setStep(step - 1)}><Text style={styles.secondaryLabel}>Anterior</Text></Pressable> : <View />}
+          {step < steps.length - 1 ? <Pressable style={styles.primaryButton} onPress={() => setStep(step + 1)}><Text style={styles.primaryLabel}>Continuar</Text></Pressable> : <Pressable style={styles.primaryButton} onPress={finish}><Text style={styles.primaryLabel}>Terminar configuración</Text></Pressable>}
+        </View>
       </View>
     </View>
   );
@@ -242,7 +303,7 @@ function ModulePlaceholder({ title, text }: { title: string; text: string }) {
 }
 
 function screenTitle(screen: Screen) {
-  return { dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
@@ -271,6 +332,22 @@ const styles = StyleSheet.create({
   heroTitle: { color: "#17332d", fontSize: 23, fontWeight: "800", maxWidth: 650 },
   heroText: { color: "#416457", fontSize: 15, marginTop: 9 },
   version: { color: "#258269", fontSize: 12, fontWeight: "700", marginTop: 20 },
+  wizardHero: { backgroundColor: "#e8eefb", borderRadius: 16, padding: 26, marginBottom: 18 },
+  wizardEyebrow: { color: "#4d64a1", fontSize: 11, fontWeight: "700", letterSpacing: 2 },
+  wizardTitle: { color: "#1e2b4d", fontSize: 24, fontWeight: "800", marginTop: 7 },
+  wizardText: { color: "#526078", fontSize: 15, lineHeight: 23, marginTop: 8 },
+  wizardTenant: { color: "#17332d", fontSize: 20, fontWeight: "800", marginTop: 18 },
+  wizardBullet: { color: "#344a41", fontSize: 15, marginTop: 10 },
+  stepper: { flexDirection: "row", justifyContent: "space-between", marginBottom: 18, paddingHorizontal: 8 },
+  step: { alignItems: "center", flex: 1 },
+  stepDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: "#cbd8d1", alignItems: "center", justifyContent: "center", backgroundColor: "#ffffff" },
+  stepDotActive: { backgroundColor: "#258269", borderColor: "#258269" },
+  stepNumber: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
+  stepLabel: { color: "#718078", fontSize: 12, marginTop: 7 },
+  stepLabelActive: { color: "#258269", fontWeight: "700" },
+  wizardActions: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24 },
+  secondaryButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 16, paddingVertical: 11, marginTop: 16 },
+  secondaryLabel: { color: "#285246", fontSize: 14, fontWeight: "600" },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 18 },
   metric: { backgroundColor: "#ffffff", borderRadius: 12, padding: 20, minWidth: 150, flexGrow: 1, flexBasis: "20%", borderWidth: 1, borderColor: "#e1e8e3" },
   metricValue: { color: "#17332d", fontSize: 28, fontWeight: "800" },
