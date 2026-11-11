@@ -9,7 +9,7 @@ Fecha: 11 de noviembre de 2026.
 | Repositorio local | `/Users/rafa_penya/presup`, commit inicial `f9b793a`; origin apunta a neria-rafapenya/presup |
 | Preparación de origen | `/Users/rafa_penya/Documents/Codex/2026-11-11/new-chat-2/presup`; ocho archivos incorporados, sin copiar `.git` |
 | Cambios previos del destino | README versionado con título `presup`, sin modificaciones; `.DS_Store` sin seguimiento. Ambos se conservan; README fusionado y `.DS_Store` excluido |
-| .env del proyecto | Copiado al no existir en el destino, con permisos privados, credenciales vacías y AI_MOCK=true; contenido no mostrado |
+| .env del proyecto | Copiado al no existir en el destino, con permisos privados y excluido de Git; contenido no mostrado |
 | DECISIONES.md | Incorporado y revisado: FastAPI, backoffice de la empresa cliente y entrega llave en mano |
 | Instrucciones | Se aplican las instrucciones AGENTS.md aportadas en la conversación |
 | Historial Git | Se conserva el del destino; no se consulta ni publica el estado remoto |
@@ -54,7 +54,7 @@ También se compara localmente el contrato de once variables entre `.env` y `.en
 - [x] Alcance del backoffice y FastAPI documentados.
 - [x] Estado del entorno identificado.
 - [x] Preparación documental y plan siguiente disponibles.
-- [x] Sin despliegues, recursos remotos ni llamadas a IA real.
+- [x] Sin despliegues durante Fase 0; la conexión remota y la IA se dejan para las fases de implementación.
 - [x] Resolver la configuración inicial: el usuario confirma que no existe archivo previo y autoriza crearlo.
 - [x] Completar .env.example con las variables iniciales y valores locales no secretos.
 - [x] Incorporar preparación sin sobrescribir cambios existentes ni copiar su `.git`.
@@ -62,4 +62,4 @@ También se compara localmente el contrato de once variables entre `.env` y `.en
 - [x] Crear y registrar la rama de fase desde una sesión con escritura en `.git`.
 - [ ] Sincronizar con GitHub cuando corresponda; no se ha comprobado disponibilidad de push.
 
-Estado: Fase 0 cerrada documentalmente y registrada en `37b1150`; la rama `fase-1/base` está preparada para la implementación. Para validar las migraciones locales de Fase 1 siguen siendo necesarios Docker activo y Supabase CLI. Las credenciales Supabase vacías siguen siendo correctas para el modo simulado; no se han usado recursos remotos.
+Estado: Fase 0 cerrada documentalmente y registrada en `37b1150`; la rama `fase-1/base` está preparada para la implementación. La validación posterior se realiza sin Docker local y con el proyecto Supabase autorizado, usando datos ficticios y tablas `horekia_*`.

@@ -1,7 +1,7 @@
 # Horekia — Roadmap de producto y desarrollo
 
 Fecha: 11 de noviembre de 2026.
-Estado: Fase 1 en implementación; migraciones y servicios aún pendientes de validación local.
+Estado: Fase 1 validada para la base POC; desarrollo activo centrado en el backoffice.
 Base: PROMPT_CODEX_presup.md, ajustado a las decisiones confirmadas en esta conversación.
 
 ## 1. Producto y modelo de entrega
@@ -23,8 +23,8 @@ La aplicación y su API se desplegarán en la infraestructura del cliente. Supab
 | Directorio de trabajo | /Users/rafa_penya/presup |
 | Backend | Python con FastAPI |
 | Interfaces | Expo + React Native Web, backoffice y chat separados |
-| Datos, acceso y archivos | Supabase: PostgreSQL, Auth y Storage; pgvector para recuperación |
-| IA | Adaptador Gemini, modelos configurables; simulación en desarrollo y pruebas |
+| Datos, acceso y archivos | Supabase: PostgreSQL y pgvector; Auth no se usa en esta POC y Storage queda separado |
+| IA | Adaptador Gemini real y modelos configurables; datos de negocio ficticios en Supabase |
 | Despliegue objetivo | Docker Compose y Caddy con HTTPS en servidores del cliente |
 | Infraestructura declarativa | Terraform solo para recursos verificables y gestionables |
 | Idiomas | Español inicial; estructura preparada para catalán |

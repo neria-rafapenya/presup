@@ -6,7 +6,7 @@ Aplicación generalista de presupuestos, entregada llave en mano. La empresa con
 
 ## Estado
 
-Fase 1: POC validada sobre `fase-1/base`. Fase 0 quedó registrada en `fase-0/preparacion`, commit `37b1150`. La base POC existente contiene únicamente tablas `horekia_*`; la IA sigue simulada y no se usa Supabase Auth. El detalle de verificaciones y límites está en [fase-1.md](docs/fase-1.md).
+Fase 1: base POC validada sobre `fase-1/base`; el desarrollo activo se concentra en el backoffice. Fase 0 quedó registrada en `fase-0/preparacion`, commit `37b1150`. La base Supabase real contiene únicamente tablas `horekia_*` con datos ficticios; no se usa Supabase Auth. El detalle está en [fase-1.md](docs/fase-1.md).
 
 Repositorio objetivo: https://github.com/neria-rafapenya/presup.git
 
@@ -27,8 +27,8 @@ La sesión actual puede escribir en `.git` para las operaciones locales necesari
 
 Se necesitan Git, una versión compatible de Python y Node, yarn y Supabase CLI. Docker Compose se conserva para la entrega llave en mano y la validación en CI o en un entorno controlado; no se usa Docker/Supabase local en este macOS para evitar sobrecargarlo. Las versiones objetivo se fijan en Fase 1.
 
-No copiar credenciales de otros proyectos. El .env local ya existe; en una copia nueva se puede crear desde .env.example. Completar DATABASE_URL cuando se configure la base. Mantener AI_MOCK=true para desarrollo sin llamadas a Gemini y .env sin seguimiento de Git. Nunca exponer DATABASE_URL mediante variables EXPO_PUBLIC_. No ejecutar migraciones contra producción durante la validación inicial.
+No copiar credenciales de otros proyectos. El `.env` local ya existe; en una copia nueva se puede crear desde `.env.example` y completar las credenciales del proyecto. Mantener `.env` sin seguimiento de Git. Gemini está configurado para uso real; el backoffice actual no lo invoca todavía. Nunca exponer `DATABASE_URL` mediante variables `EXPO_PUBLIC_`.
 
 ## Verificación actual
 
-La estructura, scripts y contratos de Fase 1 se preparan en esta rama. La API y las apps se validan sin Docker; las migraciones y el aislamiento quedan pendientes de una ejecución desechable en CI o en un entorno autorizado. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable.
+La API y el backoffice se validan sin Docker; las migraciones y el aislamiento ya se probaron en el proyecto Supabase autorizado usando únicamente el prefijo `horekia_`. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable.

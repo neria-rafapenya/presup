@@ -1,6 +1,6 @@
 # API de Horekia
 
-Base FastAPI con configuración validada desde `.env`. El modo local mantiene `AI_MOCK=true` y acepta credenciales externas vacías.
+Base FastAPI con configuración validada desde `.env`. La POC usa Supabase real y deja Gemini configurado para uso real; sus datos de negocio son ficticios. El backoffice actual no invoca Gemini todavía porque su alcance es configuración y catálogo.
 
 ```sh
 python3 -m venv .venv

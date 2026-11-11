@@ -8,13 +8,13 @@ Entregar monorepo, base FastAPI, esquemas y migraciones reproducibles para una e
 
 Requisitos comprobados al incorporar la preparación: la rama `fase-0/preparacion` quedó registrada en `37b1150` y la rama de trabajo `fase-1/base` ya existe. Por decisión operativa no se usa Docker ni Supabase local en este macOS. Supabase CLI 3.1.0 está disponible para tareas controladas, pero la validación de migraciones se hará en CI o en una base desechable explícitamente autorizada; no se usará una base remota de producción.
 
-1. Usar el contrato de configuración creado en Fase 0 y completar los valores Supabase cuando se vaya a validar la conexión. Fijar versiones compatibles de Python y Node/Expo y documentar herramientas requeridas. No introducir variables sin avisar y solicitar su incorporación cuando sean necesarias.
+1. Usar el contrato de configuración creado en Fase 0, con Supabase y Gemini reales configurables. Fijar versiones compatibles de Python y Node/Expo y documentar herramientas requeridas. No introducir variables sin avisar y solicitar su incorporación cuando sean necesarias.
 2. Crear apps/backoffice y apps/chat con Expo; services/api con FastAPI; packages/shared con JSON Schema; directorios supabase, infra y docs. Configurar yarn y archivos de bloqueo.
 3. Añadir healthcheck local sin revelar configuración; scripts de arranque y validación de configuración al inicio. Instalar únicamente las dependencias necesarias para el stack autorizado.
 4. Definir fichas, reglas, procedencia de valores y representación monetaria. Diseñar orden de reglas y versiones de configuración, sin implementar todavía el motor.
 5. Crear migraciones por dependencias: empresa y miembros; configuración y catálogo; peticiones y conversaciones; presupuestos e historial; importaciones, correcciones, consumo y recuperación.
 6. Añadir RLS por empresa y rol; evitar claves foráneas que permitan cruces de tenant. En la base compartida, no modificar `storage.*` sin autorización separada. Acceso público de chat mediante backend, sin lectura anónima general de tablas.
-7. Preparar datos ficticios mínimos y pruebas de aislamiento para ejecutarlas en CI o en una base desechable autorizada. No cargar tarifas reales ni activar Gemini.
+7. Preparar datos ficticios mínimos y pruebas de aislamiento en una base Supabase autorizada. No cargar tarifas reales; Gemini se activa para los flujos que ya tengan adaptador y contrato verificable.
 8. Documentar tablas, relaciones, inicialización de una única empresa y comandos exactos de validación. Actualizar README.
 
 ## Modelo mínimo
@@ -40,4 +40,4 @@ Resumen de cambios, comandos probados, resultados de aislamiento, criterios pend
 
 ## Estado de esta implementación
 
-La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. La API y ambos bundles Web arrancan y responden localmente sin Docker. Las migraciones se aplicaron a la base POC existente usando exclusivamente el espacio de nombres `horekia_*`; la prueba RLS con dos identidades de aplicación pasó. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md). Supabase Auth, Storage compartido y Gemini real quedan fuera de esta POC.
+La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. La API y el bundle Web de backoffice arrancan y responden localmente sin Docker. Las migraciones se aplicaron a la base POC existente usando exclusivamente el espacio de nombres `horekia_*`; la prueba RLS con dos identidades de aplicación pasó. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md). Supabase Auth y Storage compartido quedan fuera de esta POC; Gemini queda configurado para uso real y se incorporará a los flujos que lo necesiten.

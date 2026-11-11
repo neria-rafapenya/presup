@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    ai_mock: bool = Field(default=True, validation_alias="AI_MOCK")
+    ai_mock: bool = Field(default=False, validation_alias="AI_MOCK")
     supabase_url: str = Field(default="", validation_alias="SUPABASE_URL")
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")

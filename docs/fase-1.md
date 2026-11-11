@@ -2,7 +2,7 @@
 
 ## Implementado en `fase-1/base`
 
-- Monorepo Yarn 4 con apps separadas `backoffice` y `chat`, y paquete compartido.
+- Monorepo Yarn 4 con apps separadas `backoffice` y `chat`, y paquete compartido. El trabajo activo se concentra ahora en `backoffice`.
 - API FastAPI con `/healthz`, `/readyz` y validación segura de configuración.
 - Contratos JSON Schema para fichas, reglas de precio y presupuestos.
 - Migraciones Supabase ordenadas por dependencias para el modelo mínimo de Fase 1.
@@ -19,11 +19,11 @@
 | Yarn | 4.14.1 | 4.14.1 disponible |
 | Expo | SDK 54 | declarado en ambas apps; instalación pendiente |
 | Docker | solo entrega/CI controlada | CLI 29.5.3; no se usa en este macOS |
-| Supabase CLI | 3.1.0 para tareas controladas | instalado; no se levanta Supabase local |
+| Supabase CLI | solo tareas controladas | no disponible en PATH; no se levanta Supabase local |
 
 ## Validación realizada
 
-Se han comprobado sintaxis Python, JSON, contrato de variables, exclusión de secretos, instalación Yarn, typecheck Expo, configuración Compose, tests FastAPI, arranque de la API y bundles Web de backoffice y chat. Las URLs locales respondieron `200` y `/healthz` respondió correctamente. No se han ejecutado `supabase db reset`, pruebas RLS ni `docker compose up`: por decisión del usuario no se usará Docker/Supabase local en este macOS. No se ha usado ninguna cuenta AWS, Supabase remota o Gemini.
+Se han comprobado sintaxis Python, JSON, contrato de variables, exclusión de secretos, instalación Yarn, typecheck Expo, configuración Compose, tests FastAPI, arranque de la API y bundle Web del backoffice. La API y el backoffice responden localmente sin Docker; la base usada para la POC es el proyecto Supabase real autorizado y contiene únicamente datos ficticios Horekia. No se usa Supabase Auth.
 
 ## Comandos de validación cuando el entorno esté disponible
 
@@ -41,7 +41,7 @@ docker compose -f infra/docker-compose.yml config
 docker compose -f infra/docker-compose.yml up --build api
 ```
 
-Las credenciales de `.env` deben seguir vacías y `AI_MOCK=true` durante toda esta fase. El resultado de cada comando se debe registrar antes de cerrar Fase 1. No ejecutar esos comandos en el Mac local actual.
+Las credenciales no se versionan. El entorno de trabajo mantiene `AI_MOCK=false` y modelos Gemini configurados para uso real; el backoffice actual no realiza llamadas Gemini. No se usa Docker ni Supabase local en este macOS.
 
 ## Cierre
 
@@ -54,6 +54,6 @@ Fase 1 queda cerrada para el alcance de esta POC:
 - 26 tablas Horekia creadas; no se modificaron tablas de negocio existentes.
 - Dos identidades de aplicación asociadas a tenants distintos.
 - Lecturas propias permitidas, lecturas cruzadas denegadas y escrituras cruzadas denegadas por RLS.
-- API, backoffice Web y chat Web arrancados y verificados por HTTP.
+- API y backoffice Web arrancados y verificados por HTTP; chat queda fuera del foco de desarrollo actual.
 
-Fuera de alcance de esta POC quedan Supabase Auth, Storage compartido, Gemini real y despliegue.
+Fuera del backoffice actual quedan Supabase Auth, Storage compartido, flujos de chat y el despliegue. Gemini está configurado para uso real, pero todavía no es invocado por estas pantallas.
