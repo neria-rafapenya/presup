@@ -11,7 +11,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8081", "http://127.0.0.1:8081"],
     allow_credentials=False,
-    allow_methods=["GET", "PATCH", "POST"],
+    allow_methods=["DELETE", "GET", "PATCH", "POST"],
     allow_headers=["Content-Type"],
 )
 app.include_router(backoffice_router)
