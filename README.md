@@ -38,3 +38,5 @@ El backoffice tendrá un Wizard de onboarding por tenant: aparecerá automática
 El Wizard permitirá cargar conocimiento ficticio del negocio mediante CSV. Los productos y precios alimentarán el catálogo y el motor determinista; categorías, patrones de venta, políticas y documentos servirán como contexto para Gemini, siempre aislados por tenant. La empresa final operará únicamente mediante el chatbot; el backoffice es el lugar de configuración y revisión.
 
 La ficha de empresa del Wizard también permite completar los datos comerciales del tenant y cargar la plantilla PDF de presupuesto o proforma que utilizarán las salidas posteriores.
+
+Los servicios se configuran mediante patrones reutilizables de preguntas, catálogo y reglas deterministas. Consulta [patrones-servicio.md](docs/patrones-servicio.md) para ver cómo se modelan imprentas, reformas y talleres con la misma estructura.

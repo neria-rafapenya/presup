@@ -3,6 +3,7 @@
 import io
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -48,6 +49,47 @@ class JobTypeCreate(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     name: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=2000)
+
+
+class BlueprintField(BaseModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    label: str = Field(min_length=1, max_length=160)
+    type: str = Field(pattern=r"^(text|number|boolean|choice|date|file)$")
+    required: bool = False
+    options: list[str] = Field(default_factory=list, max_length=100)
+    unit: str | None = Field(default=None, max_length=40)
+    min: Decimal | None = None
+    max: Decimal | None = None
+    help_text: str | None = Field(default=None, max_length=500)
+
+
+class BlueprintItem(BaseModel):
+    sku: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=240)
+    description: str | None = Field(default=None, max_length=2000)
+    unit: str = Field(default="unit", max_length=40)
+    base_price: Decimal | None = Field(default=None, ge=0)
+    currency: str = Field(default="EUR", min_length=3, max_length=3)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class BlueprintRule(BaseModel):
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    kind: str = Field(pattern=r"^(unit_price|factor|surcharge|minimum|formula)$")
+    priority: int = Field(default=100, ge=0)
+    definition: dict[str, Any] = Field(default_factory=dict)
+
+
+class BlueprintMeasure(BaseModel):
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    expression: dict[str, Any] = Field(default_factory=dict)
+
+
+class ServiceBlueprint(BaseModel):
+    fields: list[BlueprintField] = Field(default_factory=list, max_length=100)
+    items: list[BlueprintItem] = Field(default_factory=list, max_length=500)
+    rules: list[BlueprintRule] = Field(default_factory=list, max_length=200)
+    measures: list[BlueprintMeasure] = Field(default_factory=list, max_length=100)
 
 
 class KnowledgeRow(BaseModel):
@@ -318,6 +360,157 @@ def create_job_type(payload: JobTypeCreate, settings: Settings = Depends(get_set
     except Exception as exc:
         if "duplicate key" in str(exc).lower():
             raise HTTPException(status_code=409, detail="Ya existe un servicio con ese slug") from exc
+        raise database_error(exc) from exc
+
+
+@router.get("/job-types/{job_type_id}/blueprint")
+def get_service_blueprint(job_type_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            service = conn.execute(
+                "select id, slug, name, description from public.horekia_job_types where tenant_id = %s and id = %s",
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            if service is None:
+                raise HTTPException(status_code=404, detail="Servicio no encontrado")
+            schema = conn.execute(
+                """
+                select version, fields from public.horekia_intake_schemas
+                where tenant_id = %s and job_type_id = %s and status = 'active'
+                order by version desc limit 1
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            items = conn.execute(
+                """
+                select sku, name, description, unit, base_price, currency, metadata
+                from public.horekia_items
+                where tenant_id = %s and job_type_id = %s and status = 'active'
+                order by name
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchall()
+            rules = conn.execute(
+                """
+                select code, kind, priority, definition
+                from public.horekia_price_rules
+                where tenant_id = %s and job_type_id = %s and status = 'active'
+                order by priority, code
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchall()
+            measures = conn.execute(
+                """
+                select code, expression
+                from public.horekia_computed_measures
+                where tenant_id = %s and job_type_id = %s
+                order by code
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchall()
+            return {
+                "service": service,
+                "version": schema["version"] if schema else 0,
+                "fields": schema["fields"] if schema else [],
+                "items": items,
+                "rules": rules,
+                "measures": measures,
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.put("/job-types/{job_type_id}/blueprint")
+def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            service = conn.execute(
+                "select id from public.horekia_job_types where tenant_id = %s and id = %s",
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            if service is None:
+                raise HTTPException(status_code=404, detail="Servicio no encontrado")
+
+            active_schema = conn.execute(
+                """
+                select id, version from public.horekia_intake_schemas
+                where tenant_id = %s and job_type_id = %s and status = 'active'
+                order by version desc limit 1
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            next_version = (active_schema["version"] + 1) if active_schema else 1
+            if active_schema:
+                conn.execute(
+                    "update public.horekia_intake_schemas set status = 'archived' where tenant_id = %s and id = %s",
+                    (POC_TENANT_ID, active_schema["id"]),
+                )
+            conn.execute(
+                """
+                insert into public.horekia_intake_schemas (tenant_id, job_type_id, version, fields)
+                values (%s, %s, %s, %s)
+                """,
+                (POC_TENANT_ID, job_type_id, next_version, Jsonb([field.model_dump(mode="json", exclude_none=True) for field in payload.fields])),
+            )
+
+            for item in payload.items:
+                metadata = dict(item.metadata)
+                metadata["service_blueprint"] = True
+                conn.execute(
+                    """
+                    insert into public.horekia_items
+                      (tenant_id, job_type_id, sku, name, description, unit, base_price, currency, metadata)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    on conflict (tenant_id, sku) do update set
+                      job_type_id = excluded.job_type_id, name = excluded.name,
+                      description = excluded.description, unit = excluded.unit,
+                      base_price = excluded.base_price, currency = excluded.currency,
+                      metadata = excluded.metadata, updated_at = now()
+                    """,
+                    (POC_TENANT_ID, job_type_id, item.sku, item.name, item.description, item.unit, item.base_price, item.currency.upper(), Jsonb(metadata)),
+                )
+
+            for rule in payload.rules:
+                conn.execute(
+                    """
+                    insert into public.horekia_price_rules
+                      (tenant_id, job_type_id, code, kind, priority, definition, version)
+                    values (%s, %s, %s, %s, %s, %s, 1)
+                    on conflict (tenant_id, code, version) do update set
+                      job_type_id = excluded.job_type_id, kind = excluded.kind,
+                      priority = excluded.priority, definition = excluded.definition,
+                      status = 'active'
+                    """,
+                    (POC_TENANT_ID, job_type_id, rule.code, rule.kind, rule.priority, Jsonb(rule.definition)),
+                )
+
+            for measure in payload.measures:
+                conn.execute(
+                    """
+                    insert into public.horekia_computed_measures
+                      (tenant_id, job_type_id, code, expression, version)
+                    values (%s, %s, %s, %s, 1)
+                    on conflict (tenant_id, code, version) do update set
+                      job_type_id = excluded.job_type_id, expression = excluded.expression
+                    """,
+                    (POC_TENANT_ID, job_type_id, measure.code, Jsonb(measure.expression)),
+                )
+            conn.execute(
+                """
+                update public.horekia_tenant_settings
+                set configuration_version = configuration_version + 1, updated_at = now()
+                where tenant_id = %s
+                """,
+                (POC_TENANT_ID,),
+            )
+            return {"job_type_id": job_type_id, "version": next_version, "fields": len(payload.fields), "items": len(payload.items), "rules": len(payload.rules), "measures": len(payload.measures)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if "duplicate key" in str(exc).lower():
+            raise HTTPException(status_code=409, detail="Hay códigos repetidos en el patrón del servicio") from exc
         raise database_error(exc) from exc
 
 

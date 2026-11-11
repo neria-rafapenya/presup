@@ -54,6 +54,10 @@ type TenantProfile = {
   warranty_terms: string | null;
   metadata: Record<string, unknown>;
 };
+type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string };
+type BlueprintItem = { sku: string; name: string; description?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, unknown> };
+type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
+type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
@@ -200,6 +204,30 @@ export default function App() {
     }
   };
 
+  const loadBlueprint = async (jobTypeId: string) => {
+    try {
+      return await api<ServiceBlueprint>(`/api/v1/backoffice/job-types/${jobTypeId}/blueprint`);
+    } catch {
+      setError("No se ha podido cargar el patrón del servicio.");
+      return null;
+    }
+  };
+
+  const saveBlueprint = async (jobTypeId: string, blueprint: ServiceBlueprint) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/api/v1/backoffice/job-types/${jobTypeId}/blueprint`, { method: "PUT", body: JSON.stringify(blueprint) });
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido guardar el patrón del servicio.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <View style={styles.shell}>
       <StatusBar style="dark" />
@@ -237,14 +265,14 @@ export default function App() {
         ) : summary && profile ? (
           <>
             {screen === "wizard" ? (
-              <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onImportKnowledge={importKnowledge} saving={saving} />
+              <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onImportKnowledge={importKnowledge} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
             ) : null}
             {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
             {screen === "company" ? (
               <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
             ) : null}
             {screen === "services" ? (
-              <Services services={services} onCreate={createService} saving={saving} />
+              <Services services={services} onCreate={createService} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
             ) : null}
             {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
             {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
@@ -283,9 +311,10 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onImportKnowledge, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
+function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onImportKnowledge, onLoadBlueprint, onSaveBlueprint, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(0);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
+  const [designerService, setDesignerService] = useState<JobType | null>(null);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
     if (typeof window !== "undefined") window.localStorage.setItem(WIZARD_STORAGE_KEY, "true");
@@ -313,7 +342,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <>
             <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
             <Text style={styles.wizardText}>Define qué vende o qué trabajos realiza tu empresa. Los servicios se añaden aquí sin abandonar el Wizard.</Text>
-            {services.slice(0, 3).map((service) => <Text style={styles.wizardBullet} key={service.id}>• {service.name}</Text>)}
+            {services.slice(0, 3).map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
             <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
           </>
         ) : null}
@@ -337,6 +366,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
         </View>
       </View>
       <ServiceModal visible={serviceModalOpen} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
+      {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
 }
@@ -500,8 +530,9 @@ function Company({ summary, setSummary, onSave, saving }: { summary: Summary; se
   );
 }
 
-function Services({ services, onCreate, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
+function Services({ services, onCreate, onLoadBlueprint, onSaveBlueprint, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
+  const [designerService, setDesignerService] = useState<JobType | null>(null);
   return (
     <View>
       <View style={styles.panel}>
@@ -511,9 +542,10 @@ function Services({ services, onCreate, saving }: { services: JobType[]; onCreat
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Servicios configurados</Text>
-        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Text style={styles.listArrow}>›</Text></View>)}
+        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
       </View>
       <ServiceModal visible={modalVisible} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
+      {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
 }
@@ -542,6 +574,137 @@ function ServiceModal({ visible, onClose, onCreate, saving }: { visible: boolean
       </View>
     </Modal>
   );
+}
+
+function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, saving }: { visible: boolean; service: JobType; onClose: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
+  const [draft, setDraft] = useState<ServiceBlueprint>(emptyBlueprint());
+  const [rulesText, setRulesText] = useState("[]");
+  const [measuresText, setMeasuresText] = useState("[]");
+  const [designerError, setDesignerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    void onLoad(service.id).then((next) => {
+      const blueprint = next ?? emptyBlueprint();
+      setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
+      setRulesText(JSON.stringify(blueprint.rules ?? [], null, 2));
+      setMeasuresText(JSON.stringify(blueprint.measures ?? [], null, 2));
+    });
+  }, [visible, service.id, onLoad]);
+
+  const updateField = (index: number, patch: Partial<BlueprintField>) => setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
+  const updateItem = (index: number, patch: Partial<BlueprintItem>) => setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
+  const addField = () => setDraft({ ...draft, fields: [...draft.fields, { key: `field_${draft.fields.length + 1}`, label: "Nueva pregunta", type: "text", required: true, options: [] }] });
+  const addItem = () => setDraft({ ...draft, items: [...draft.items, { sku: `item_${draft.items.length + 1}`, name: "Nuevo concepto", unit: "unit", currency: "EUR", metadata: {} }] });
+  const save = async () => {
+    try {
+      const rules = JSON.parse(rulesText) as BlueprintRule[];
+      const measures = JSON.parse(measuresText) as Array<{ code: string; expression: Record<string, unknown> }>;
+      if (!Array.isArray(rules) || !Array.isArray(measures)) throw new Error("Las reglas deben ser listas JSON");
+      if (await onSave(service.id, { ...draft, rules, measures })) onClose();
+      setDesignerError(null);
+    } catch (error) {
+      setDesignerError(error instanceof Error ? error.message : "JSON de reglas no válido");
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.designerCard}>
+          <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
+          <ScrollView style={styles.designerScroll}>
+            <Text style={styles.sectionLabel}>Plantilla inicial</Text>
+            <Text style={styles.listMeta}>Carga una estructura orientativa y personalízala para este negocio.</Text>
+            <View style={styles.templateChoices}>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("print", setDraft, setRulesText, setMeasuresText)}><Text style={styles.smallButtonLabel}>Imprenta</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("renovation", setDraft, setRulesText, setMeasuresText)}><Text style={styles.smallButtonLabel}>Reformas</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDraftFromTemplate("mechanic", setDraft, setRulesText, setMeasuresText)}><Text style={styles.smallButtonLabel}>Taller</Text></Pressable>
+            </View>
+            <Text style={styles.sectionLabel}>Preguntas y variables</Text>
+            {draft.fields.map((field, index) => <View style={styles.designerRow} key={`${field.key}-${index}`}><Field label="Código" value={field.key} onChangeText={(key) => updateField(index, { key })} /><Field label="Pregunta" value={field.label} onChangeText={(label) => updateField(index, { label })} /><Field label="Tipo" value={field.type} onChangeText={(type) => updateField(index, { type })} /><Toggle label="Obligatoria" value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>)}
+            <Pressable style={styles.secondaryButton} onPress={addField}><Text style={styles.secondaryLabel}>Añadir pregunta</Text></Pressable>
+            <Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
+            {draft.items.map((item, index) => <View style={styles.designerRow} key={`${item.sku}-${index}`}><Field label="SKU" value={item.sku} onChangeText={(sku) => updateItem(index, { sku })} /><Field label="Concepto" value={item.name} onChangeText={(name) => updateItem(index, { name })} /><Field label="Precio base" value={item.base_price === undefined ? "" : String(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: value ? Number(value.replace(",", ".")) : undefined })} /></View>)}
+            <Pressable style={styles.secondaryButton} onPress={addItem}><Text style={styles.secondaryLabel}>Añadir concepto</Text></Pressable>
+            <Text style={styles.sectionLabel}>Reglas deterministas (JSON)</Text>
+            <Text style={styles.listMeta}>El LLM propone datos; estas reglas son las que podrán calcular el importe.</Text>
+            <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={rulesText} onChangeText={setRulesText} multiline />
+            <Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text>
+            <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={setMeasuresText} multiline />
+            {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
+          </ScrollView>
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void save()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar patrón"}</Text></Pressable></View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function emptyBlueprint(): ServiceBlueprint {
+  return { fields: [], items: [], rules: [], measures: [] };
+}
+
+function setDraftFromTemplate(template: "print" | "renovation" | "mechanic", setDraft: (blueprint: ServiceBlueprint) => void, setRulesText: (value: string) => void, setMeasuresText: (value: string) => void) {
+  const blueprint = blueprintFor(template);
+  setDraft(blueprint);
+  setRulesText(JSON.stringify(blueprint.rules, null, 2));
+  setMeasuresText(JSON.stringify(blueprint.measures, null, 2));
+}
+
+function blueprintFor(template: "print" | "renovation" | "mechanic"): ServiceBlueprint {
+  if (template === "renovation") return {
+    fields: [
+      { key: "room", label: "Estancia a reformar", type: "choice", required: true, options: ["baño", "cocina", "salón"], unit: undefined },
+      { key: "surface_m2", label: "Superficie", type: "number", required: true, options: [], unit: "m²", min: 1 },
+      { key: "tile", label: "Baldosa", type: "choice", required: true, options: ["blanca mate de gres", "porcelánico", "otro"] },
+      { key: "faucet", label: "¿Incluye grifería?", type: "boolean", required: true, options: [] },
+      { key: "labor_hours", label: "Horas de mano de obra", type: "number", required: true, options: [], unit: "h", min: 0 }
+    ],
+    items: [
+      { sku: "tile-m2", name: "Baldosa por m²", unit: "m²", base_price: 22, currency: "EUR", metadata: { category: "material" } },
+      { sku: "labor-hour", name: "Hora de mano de obra", unit: "hour", base_price: 35, currency: "EUR", metadata: { category: "labor" } }
+    ],
+    rules: [
+      { code: "tile_by_surface", kind: "formula", priority: 10, definition: { quantity: "surface_m2", item: "tile-m2" } },
+      { code: "labor_by_hours", kind: "formula", priority: 20, definition: { quantity: "labor_hours", item: "labor-hour" } }
+    ],
+    measures: []
+  };
+  if (template === "mechanic") return {
+    fields: [
+      { key: "operation", label: "Operación", type: "choice", required: true, options: ["mantenimiento", "reparación", "sustitución"] },
+      { key: "part", label: "Pieza o material", type: "text", required: true, options: [] },
+      { key: "labor_hours", label: "Horas de mano de obra", type: "number", required: true, options: [], unit: "h", min: 0 },
+      { key: "repair_photo", label: "Fotografía de la avería", type: "file", required: false, options: [] }
+    ],
+    items: [{ sku: "labor-hour", name: "Hora de mano de obra", unit: "hour", base_price: 45, currency: "EUR", metadata: { category: "labor" } }],
+    rules: [{ code: "labor_by_hours", kind: "formula", priority: 10, definition: { quantity: "labor_hours", item: "labor-hour" } }],
+    measures: []
+  };
+  return {
+    fields: [
+      { key: "bag_type", label: "Tipo de bolsa", type: "choice", required: true, options: ["tote bag", "mochila", "saco" ] },
+      { key: "material", label: "Material", type: "choice", required: true, options: ["algodón", "yute", "poliéster"] },
+      { key: "quantity", label: "Unidades", type: "number", required: true, options: [], unit: "ud", min: 250 },
+      { key: "size", label: "Talla", type: "choice", required: true, options: ["S", "M", "L"] },
+      { key: "base_color", label: "Color de base", type: "text", required: true, options: [] },
+      { key: "print_type", label: "Tipo de impresión", type: "choice", required: true, options: ["digital", "serigrafía 2 colores", "serigrafía 4 colores"] },
+      { key: "artwork_provided", label: "¿Aporta el diseño?", type: "boolean", required: true, options: [] }
+    ],
+    items: [
+      { sku: "bag-cotton", name: "Bolsa de algodón", unit: "unit", base_price: 4.5, currency: "EUR", metadata: { category: "producto", material: "algodón" } },
+      { sku: "print-digital", name: "Impresión digital", unit: "unit", base_price: 1.8, currency: "EUR", metadata: { category: "impresión" } },
+      { sku: "artwork-setup", name: "Preparación de diseño", unit: "job", base_price: 35, currency: "EUR", metadata: { category: "diseño" } }
+    ],
+    rules: [
+      { code: "minimum_quantity", kind: "minimum", priority: 1, definition: { field: "quantity", minimum: 250 } },
+      { code: "digital_print", kind: "formula", priority: 10, definition: { when: { print_type: "digital" }, item: "print-digital", quantity: "quantity" } },
+      { code: "artwork_setup", kind: "surcharge", priority: 20, definition: { when: { artwork_provided: false }, item: "artwork-setup", quantity: 1 } },
+      { code: "volume_discount", kind: "factor", priority: 30, definition: { field: "quantity", tiers: [{ gte: 1000, factor: 0.85 }, { gte: 500, factor: 0.92 }] } }
+    ],
+    measures: []
+  };
 }
 
 function Field({ label, value, onChangeText, keyboardType, multiline = false }: { label: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean }) {
@@ -600,12 +763,20 @@ const styles = StyleSheet.create({
   stepLabel: { color: "#718078", fontSize: 12, marginTop: 7 },
   stepLabelActive: { color: "#258269", fontWeight: "700" },
   wizardActions: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24 },
+  serviceSummaryRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  smallButton: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8 },
+  smallButtonLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   knowledgeBox: { backgroundColor: "#f7f9fc", borderRadius: 10, padding: 16, marginTop: 18 },
   knowledgeCount: { color: "#61736a", fontSize: 12, lineHeight: 18, marginTop: 14 },
   secondaryButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 16, paddingVertical: 11, marginTop: 16 },
   secondaryLabel: { color: "#285246", fontSize: 14, fontWeight: "600" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(23, 51, 45, 0.36)", alignItems: "center", justifyContent: "center", padding: 24 },
   modalCard: { width: "100%", maxWidth: 620, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  designerScroll: { maxHeight: 620 },
+  designerRow: { flexDirection: "row", gap: 10, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 12, marginTop: 8 },
+  templateChoices: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  codeInput: { fontFamily: "monospace", fontSize: 12 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   modalClose: { color: "#52645b", fontSize: 28, lineHeight: 28, paddingHorizontal: 6 },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 18 },

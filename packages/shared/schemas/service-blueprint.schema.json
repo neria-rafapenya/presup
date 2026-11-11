@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://horekia.local/schemas/service-blueprint.schema.json",
+  "title": "Horekia service blueprint",
+  "type": "object",
+  "required": ["fields", "items", "rules", "measures"],
+  "properties": {
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "label", "type", "required"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+          "label": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["text", "number", "boolean", "choice", "date", "file"] },
+          "required": { "type": "boolean" },
+          "options": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "unit": { "type": "string" },
+          "min": { "type": "number" },
+          "max": { "type": "number" },
+          "help_text": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sku", "name", "unit", "currency", "metadata"],
+        "properties": {
+          "sku": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": ["string", "null"] },
+          "unit": { "type": "string" },
+          "base_price": { "type": ["number", "null"], "minimum": 0 },
+          "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+          "metadata": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "price-rule.schema.json" }
+    },
+    "measures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "expression"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+          "expression": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

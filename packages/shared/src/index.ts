@@ -13,6 +13,17 @@ export type IntakeField = {
   required: boolean;
   options?: string[];
   provenance?: Provenance;
+  unit?: string;
+  min?: number;
+  max?: number;
+  helpText?: string;
+};
+
+export type ServiceBlueprint = {
+  fields: IntakeField[];
+  items: Array<{ sku: string; name: string; description?: string; unit: string; basePrice?: string; currency: string; metadata: Record<string, unknown> }>;
+  rules: PriceRule[];
+  measures: Array<{ code: string; expression: Record<string, unknown> }>;
 };
 
 export type PriceRule = {
