@@ -40,4 +40,4 @@ Resumen de cambios, comandos probados, resultados de aislamiento, criterios pend
 
 ## Estado de esta implementación
 
-La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. La API y ambos bundles Web arrancan y responden localmente sin Docker. El cierre sigue pendiente únicamente de aplicar las migraciones y ejecutar pruebas RLS con dos usuarios en una Supabase desechable autorizada. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md).
+La estructura y los contratos de Fase 1 están implementados en `fase-1/base`. La API y ambos bundles Web arrancan y responden localmente sin Docker. Las migraciones se aplicaron a la base POC existente usando exclusivamente el espacio de nombres `horekia_*`; la prueba RLS con dos identidades de aplicación pasó. El detalle y los comandos reproducibles están en [fase-1.md](fase-1.md) y [modelo-datos-fase-1.md](modelo-datos-fase-1.md). Supabase Auth, Storage compartido y Gemini real quedan fuera de esta POC.

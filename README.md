@@ -6,7 +6,7 @@ Aplicación generalista de presupuestos, entregada llave en mano. La empresa con
 
 ## Estado
 
-Fase 1: base en implementación sobre `fase-1/base`. Fase 0 quedó registrada en `fase-0/preparacion`, commit `37b1150`. La configuración local conserva credenciales vacías e IA simulada; la conexión a Supabase sigue pendiente. Las migraciones y aplicaciones se preparan en esta fase, pero no se consideran validadas hasta ejecutar las comprobaciones locales.
+Fase 1: POC validada sobre `fase-1/base`. Fase 0 quedó registrada en `fase-0/preparacion`, commit `37b1150`. La base POC existente contiene únicamente tablas `horekia_*`; la IA sigue simulada y no se usa Supabase Auth. El detalle de verificaciones y límites está en [fase-1.md](docs/fase-1.md).
 
 Repositorio objetivo: https://github.com/neria-rafapenya/presup.git
 

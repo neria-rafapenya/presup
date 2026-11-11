@@ -45,4 +45,15 @@ Las credenciales de `.env` deben seguir vacías y `AI_MOCK=true` durante toda es
 
 ## Cierre
 
-La implementación de API, apps y migraciones está registrada, pero Fase 1 no se declara cerrada todavía: falta ejecutar la prueba de dos usuarios y aislamiento RLS en una Supabase desechable autorizada.
+## Cierre verificado de la POC
+
+Fase 1 queda cerrada para el alcance de esta POC:
+
+- PostgreSQL existente conectado mediante `DATABASE_URL`.
+- Cinco migraciones y seed aplicados exclusivamente en tablas `horekia_*`.
+- 26 tablas Horekia creadas; no se modificaron tablas de negocio existentes.
+- Dos identidades de aplicación asociadas a tenants distintos.
+- Lecturas propias permitidas, lecturas cruzadas denegadas y escrituras cruzadas denegadas por RLS.
+- API, backoffice Web y chat Web arrancados y verificados por HTTP.
+
+Fuera de alcance de esta POC quedan Supabase Auth, Storage compartido, Gemini real y despliegue.
