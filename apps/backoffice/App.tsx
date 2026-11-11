@@ -199,6 +199,23 @@ export default function App() {
     }
   };
 
+  const deleteService = async (jobTypeId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api<{ id: string }>(`/api/v1/backoffice/job-types/${jobTypeId}`, { method: "DELETE" });
+      setServices((current) => current.filter((service) => service.id !== jobTypeId));
+      setSummary((current) => current ? { ...current, counts: { ...current.counts, job_types: Math.max(0, current.counts.job_types - 1) } } : current);
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido eliminar el servicio.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const importKnowledge = async (sourceName: string, rows: KnowledgeRow[]) => {
     setSaving(true);
     setError(null);
@@ -278,14 +295,14 @@ export default function App() {
         ) : summary && profile ? (
           <>
             {screen === "wizard" ? (
-              <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onImportKnowledge={importKnowledge} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
+              <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onImportKnowledge={importKnowledge} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
             ) : null}
             {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
             {screen === "company" ? (
               <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
             ) : null}
             {screen === "services" ? (
-              <Services services={services} onCreate={createService} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
+              <Services services={services} onCreate={createService} onDelete={deleteService} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
             ) : null}
             {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
             {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
@@ -324,10 +341,11 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onImportKnowledge, onLoadBlueprint, onSaveBlueprint, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
+function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onImportKnowledge, onLoadBlueprint, onSaveBlueprint, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(0);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [designerService, setDesignerService] = useState<JobType | null>(null);
+  const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
     if (typeof window !== "undefined") window.localStorage.setItem(WIZARD_STORAGE_KEY, "true");
@@ -355,7 +373,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <>
             <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
             <Text style={styles.wizardText}>Define aquí los productos o servicios que tu empresa quiere presupuestar. Si tienes una imprenta, una empresa de reformas o un taller mecánico, crea cada tipo de trabajo que ofreces y después configura sus preguntas, opciones y precios. Así la IA tendrá el contexto necesario para entender la petición, pedir los datos que falten y responder con un presupuesto conciso.</Text>
-            {services.map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
+            {services.map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
             <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
           </>
         ) : null}
@@ -379,6 +397,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
         </View>
       </View>
       <ServiceModal visible={serviceModalOpen} services={services} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
+      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDeleteService(serviceToDelete.id)) { if (designerService?.id === serviceToDelete.id) setDesignerService(null); setServiceToDelete(null); } }} saving={saving} />
       {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
@@ -543,9 +562,10 @@ function Company({ summary, setSummary, onSave, saving }: { summary: Summary; se
   );
 }
 
-function Services({ services, onCreate, onLoadBlueprint, onSaveBlueprint, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
+function Services({ services, onCreate, onDelete, onLoadBlueprint, onSaveBlueprint, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [designerService, setDesignerService] = useState<JobType | null>(null);
+  const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   return (
     <View>
       <View style={styles.panel}>
@@ -555,12 +575,17 @@ function Services({ services, onCreate, onLoadBlueprint, onSaveBlueprint, saving
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Servicios configurados</Text>
-        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable></View>)}
+        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
       </View>
       <ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
+      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) { if (designerService?.id === serviceToDelete.id) setDesignerService(null); setServiceToDelete(null); } }} saving={saving} />
       {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
     </View>
   );
+}
+
+function DeleteServiceModal({ service, onClose, onConfirm, saving }: { service: JobType | null; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean }) {
+  return <Modal visible={Boolean(service)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar servicio</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{service?.name}</Text><Text style={styles.wizardText}>Se eliminará este servicio y su configuración de preguntas, catálogo y reglas. Las peticiones o presupuestos históricos conservarán sus referencias sin este servicio.</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
 function ServiceModal({ visible, services, onClose, onCreate, saving }: { visible: boolean; services: JobType[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
@@ -960,6 +985,7 @@ const styles = StyleSheet.create({
   stepLabelActive: { color: "#258269", fontWeight: "700" },
   wizardActions: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24 },
   serviceSummaryRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  serviceActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   smallButton: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8 },
   smallButtonLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   knowledgeBox: { backgroundColor: "#f7f9fc", borderRadius: 10, padding: 16, marginTop: 18 },
@@ -968,6 +994,9 @@ const styles = StyleSheet.create({
   secondaryLabel: { color: "#285246", fontSize: 14, fontWeight: "600" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(23, 51, 45, 0.36)", alignItems: "center", justifyContent: "center", padding: 24 },
   modalCard: { width: "100%", maxWidth: 620, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  confirmCard: { width: "100%", maxWidth: 520, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  confirmTitle: { color: "#17332d", fontSize: 20, fontWeight: "800", marginTop: 8 },
+  confirmWarning: { color: "#a53d35", backgroundColor: "#fdecea", borderRadius: 8, padding: 12, marginTop: 14, fontSize: 13, fontWeight: "700" },
   designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   designerScroll: { maxHeight: 620 },
   designerRow: { flexDirection: "row", gap: 8, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 7, marginTop: 5 },
@@ -989,6 +1018,8 @@ const styles = StyleSheet.create({
   blockTitle: { color: "#17332d", fontSize: 14, fontWeight: "700", flex: 1 },
   reorderLabel: { color: "#285246", fontSize: 18, fontWeight: "800", paddingHorizontal: 4 },
   deleteLabel: { color: "#a53d35", fontSize: 12, fontWeight: "700", paddingHorizontal: 4 },
+  deleteButton: { borderWidth: 1, borderColor: "#e2b7b2", borderRadius: 7, paddingHorizontal: 8, paddingVertical: 7, marginTop: 8 },
+  dangerButton: { alignSelf: "flex-start", backgroundColor: "#a53d35", borderRadius: 8, paddingHorizontal: 18, paddingVertical: 12, marginTop: 8 },
   ruleDetailInput: { minHeight: 72, fontFamily: "monospace", fontSize: 12 },
   codeInput: { fontFamily: "monospace", fontSize: 12 },
   infoLabelWrap: { position: "relative", zIndex: 2 },

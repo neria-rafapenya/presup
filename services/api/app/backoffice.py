@@ -364,6 +364,29 @@ def create_job_type(payload: JobTypeCreate, settings: Settings = Depends(get_set
         raise database_error(exc) from exc
 
 
+@router.delete("/job-types/{job_type_id}")
+def delete_job_type(job_type_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, str]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            service = conn.execute(
+                "select id from public.horekia_job_types where tenant_id = %s and id = %s",
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            if service is None:
+                raise HTTPException(status_code=404, detail="Servicio no encontrado")
+
+            conn.execute("delete from public.horekia_intake_schemas where tenant_id = %s and job_type_id = %s", (POC_TENANT_ID, job_type_id))
+            conn.execute("delete from public.horekia_price_rules where tenant_id = %s and job_type_id = %s", (POC_TENANT_ID, job_type_id))
+            conn.execute("delete from public.horekia_computed_measures where tenant_id = %s and job_type_id = %s", (POC_TENANT_ID, job_type_id))
+            conn.execute("delete from public.horekia_items where tenant_id = %s and job_type_id = %s", (POC_TENANT_ID, job_type_id))
+            conn.execute("delete from public.horekia_job_types where tenant_id = %s and id = %s", (POC_TENANT_ID, job_type_id))
+            return {"id": str(job_type_id)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
 @router.get("/job-types/{job_type_id}/blueprint")
 def get_service_blueprint(job_type_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
     try:
