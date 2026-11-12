@@ -580,9 +580,18 @@ function Documentation() {
   ];
   return <View>
     <View style={styles.panel}>
+      <Text style={styles.panelTitle}>Documentación</Text>
+      <Text style={styles.wizardText}>Índice general de documentación para configurar y operar Horekia. Selecciona el documento que necesites consultar.</Text>
+      <Text style={styles.sectionLabel}>Índice de documentos</Text>
+      <View style={styles.documentationDocumentActive}>
+        <Text style={styles.documentationDocumentNumber}>1</Text>
+        <View style={styles.tableMain}><Text style={styles.documentationDocumentTitle}>Documentación para nutrir la base de conocimiento</Text><Text style={styles.listMeta}>Guía para preparar CSV, productos, políticas, FAQ, patrones comerciales y documentación del tenant.</Text></View>
+      </View>
+    </View>
+    <View style={styles.panel}>
       <Text style={styles.panelTitle}>Documentación para nutrir la base de conocimiento</Text>
       <Text style={styles.wizardText}>Guía para la persona técnica o responsable de configuración que prepara los datos de un tenant. La base aporta contexto a Gemini, mientras que los precios y cálculos que afectan al importe deben permanecer en el Diseñador de servicios.</Text>
-      <Text style={styles.sectionLabel}>Índice</Text>
+      <Text style={styles.sectionLabel}>Índice de esta guía</Text>
       {index.map((title, indexNumber) => <Text key={title} style={styles.documentationIndex}>{indexNumber + 1}. {title}</Text>)}
     </View>
 
@@ -1733,6 +1742,9 @@ const styles = StyleSheet.create({
   panel: { backgroundColor: "#ffffff", borderRadius: 14, padding: 24, borderWidth: 1, borderColor: "#e1e8e3", marginBottom: 18 },
   panelTitle: { color: "#17332d", fontSize: 18, fontWeight: "700", marginBottom: 20 },
   documentationIndex: { color: "#285246", fontSize: 14, lineHeight: 24 },
+  documentationDocumentActive: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: "#8fc6a9", borderRadius: 9, backgroundColor: "#edf7f0", padding: 12 },
+  documentationDocumentNumber: { color: "#258269", fontSize: 16, fontWeight: "800", width: 22 },
+  documentationDocumentTitle: { color: "#17332d", fontSize: 14, fontWeight: "800", marginBottom: 4 },
   documentationSection: { backgroundColor: "#ffffff", borderRadius: 14, padding: 24, borderWidth: 1, borderColor: "#e1e8e3", marginBottom: 18 },
   documentationSectionTitle: { color: "#17332d", fontSize: 17, fontWeight: "800", marginBottom: 14 },
   documentationText: { color: "#52645b", fontSize: 14, lineHeight: 22, marginBottom: 10 },
