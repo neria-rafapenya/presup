@@ -33,6 +33,7 @@ type NewService = { slug: string; name: string; description: string };
 type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
 type KnowledgeSummary = { total: number; by_kind: { kind: string; count: number }[] };
 type KnowledgeEntry = { id: string; kind: string; title: string; content?: string | null; source_name?: string | null };
+type HelpMessage = { role: "user" | "assistant"; content: string };
 type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
@@ -351,6 +352,14 @@ export default function App() {
     }
   };
 
+  const askDocumentation = async (messages: HelpMessage[]) => {
+    const response = await api<{ reply: string }>("/api/v1/backoffice/documentation/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    });
+    return response.reply;
+  };
+
   const importServiceDefinition = async (payload: ServiceImportData) => {
     setSaving(true);
     setError(null);
@@ -491,12 +500,50 @@ export default function App() {
           ) : null}
         </ScrollView>
       )}
+      {screen !== "designer" ? <DocumentationHelpChat onSend={askDocumentation} onOpenDocumentation={() => navigate("documentation")} /> : null}
     </View>
   );
 }
 
 function NavButton({ label, active, onPress, child = false }: { label: string; active: boolean; onPress: () => void; child?: boolean }) {
   return <Pressable style={[styles.navButton, child && styles.navButtonChild, active && styles.navButtonActive]} onPress={onPress}><Text style={[styles.navLabel, child && styles.navLabelChild, active && styles.navLabelActive]}>{label}</Text></Pressable>;
+}
+
+function DocumentationHelpChat({ onSend, onOpenDocumentation }: { onSend: (messages: HelpMessage[]) => Promise<string>; onOpenDocumentation: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [messages, setMessages] = useState<HelpMessage[]>([{ role: "assistant", content: "Hola. Puedo ayudarte con la configuración del backoffice, los servicios y los CSV. No modifico datos." }]);
+
+  const submit = async () => {
+    const content = draft.trim();
+    if (!content || sending) return;
+    const nextMessages = [...messages, { role: "user" as const, content }];
+    setMessages(nextMessages);
+    setDraft("");
+    setSending(true);
+    try {
+      const reply = await onSend(nextMessages.slice(-12));
+      setMessages([...nextMessages, { role: "assistant", content: reply }]);
+    } catch {
+      setMessages([...nextMessages, { role: "assistant", content: "No he podido conectar con la ayuda ahora mismo. Puedes consultar el menú Documentación." }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return <View style={styles.helpLayer} pointerEvents="box-none">
+    {open ? <View style={styles.helpCard}>
+      <View style={styles.helpHeader}><View><Text style={styles.helpTitle}>Ayuda del backoffice</Text><Text style={styles.helpSubtitle}>Documentación Horekia</Text></View><Pressable onPress={() => setOpen(false)} accessibilityLabel="Cerrar ayuda"><Text style={styles.modalClose}>×</Text></Pressable></View>
+      <ScrollView style={styles.helpMessages} contentContainerStyle={styles.helpMessagesContent}>
+        {messages.map((message, index) => <View key={`${message.role}-${index}`} style={[styles.helpMessage, message.role === "user" ? styles.helpMessageUser : styles.helpMessageAssistant]}><Text style={styles.helpMessageText}>{message.content}</Text></View>)}
+        {sending ? <ActivityIndicator color="#258269" size="small" style={styles.helpLoader} /> : null}
+      </ScrollView>
+      <TextInput style={styles.helpInput} value={draft} onChangeText={setDraft} placeholder="Escribe tu duda…" editable={!sending} onSubmitEditing={() => void submit()} returnKeyType="send" />
+      <View style={styles.helpActions}><Pressable style={styles.helpDocumentationLink} onPress={onOpenDocumentation}><Text style={styles.helpDocumentationLabel}>Abrir documentación</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={sending || !draft.trim()}><Text style={styles.primaryLabel}>{sending ? "Consultando…" : "Enviar"}</Text></Pressable></View>
+    </View> : null}
+    <Pressable style={styles.helpFab} onPress={() => setOpen(!open)} accessibilityLabel={open ? "Cerrar ayuda del backoffice" : "Abrir ayuda del backoffice"}><Text style={styles.helpFabIcon}>{open ? "×" : "?"}</Text><Text style={styles.helpFabLabel}>Ayuda</Text></Pressable>
+  </View>;
 }
 
 function Dashboard({ summary }: { summary: Summary }) {
@@ -1614,6 +1661,25 @@ const styles = StyleSheet.create({
   sidebarBottom: { marginTop: "auto", paddingTop: 32 },
   sidebarHint: { color: "#8fc6a9", fontSize: 12 },
   sidebarMuted: { color: "#d7e6dc", fontSize: 13, marginTop: 6 },
+  helpLayer: { position: "absolute", right: 22, bottom: 22, alignItems: "flex-end", zIndex: 80 },
+  helpCard: { width: 320, height: 460, backgroundColor: "#ffffff", borderRadius: 14, borderWidth: 1, borderColor: "#dbe6df", padding: 16, marginBottom: 12, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
+  helpHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingBottom: 10 },
+  helpTitle: { color: "#17332d", fontSize: 16, fontWeight: "800" },
+  helpSubtitle: { color: "#718078", fontSize: 11, marginTop: 3 },
+  helpMessages: { flex: 1, marginVertical: 10 },
+  helpMessagesContent: { gap: 8, paddingBottom: 4 },
+  helpMessage: { maxWidth: "88%", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  helpMessageUser: { alignSelf: "flex-end", backgroundColor: "#dcefe4" },
+  helpMessageAssistant: { alignSelf: "flex-start", backgroundColor: "#f0f5f1" },
+  helpMessageText: { color: "#285246", fontSize: 13, lineHeight: 19 },
+  helpLoader: { alignSelf: "flex-start", margin: 6 },
+  helpInput: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, color: "#17332d", backgroundColor: "#fbfcfb" },
+  helpActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  helpDocumentationLink: { paddingVertical: 10, paddingRight: 4 },
+  helpDocumentationLabel: { color: "#258269", fontSize: 12, fontWeight: "700" },
+  helpFab: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#258269", borderRadius: 24, paddingHorizontal: 14, paddingVertical: 11, shadowColor: "#000000", shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  helpFabIcon: { color: "#ffffff", fontSize: 18, fontWeight: "800" },
+  helpFabLabel: { color: "#ffffff", fontSize: 13, fontWeight: "800" },
   content: { flex: 1 },
   contentInner: { padding: 42, maxWidth: 1200, width: "100%", alignSelf: "center" },
   designerWorkspace: { flex: 1, backgroundColor: "#f6f7f5" },

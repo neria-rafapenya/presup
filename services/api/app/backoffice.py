@@ -1,8 +1,11 @@
 """Backoffice POC routes backed by the Horekia PostgreSQL namespace."""
 
 import io
+import json
+import urllib.error
+import urllib.request
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -12,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
 from .db import POC_TENANT_ID, db_session
+from .documentation import BACKOFFICE_HELP_CONTEXT
 
 router = APIRouter(prefix="/api/v1/backoffice", tags=["backoffice"])
 
@@ -115,11 +119,57 @@ class KnowledgeEntryPatch(BaseModel):
     content: str = Field(max_length=10000)
 
 
+class DocumentationChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class DocumentationChatRequest(BaseModel):
+    messages: list[DocumentationChatMessage] = Field(min_length=1, max_length=12)
+
+
 def database_error(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Base de datos no disponible para el backoffice",
     )
+
+
+def _documentation_chat_mock(messages: list[DocumentationChatMessage]) -> str:
+    question = messages[-1].content.lower()
+    if "csv" in question or "import" in question:
+        return "Para datos generales usa Base de conocimiento → Importar conocimiento. Para preguntas, conceptos, reglas o medidas usa Importar patrón de servicio, con filas service, field, item, rule o measure."
+    if "servicio" in question or "patrón" in question:
+        return "Crea el servicio desde el Wizard, paso Oferta y servicios. Después pulsa Diseñar para configurar Preguntas, Catálogo, Reglas y Medidas."
+    return "Consulta el menú Documentación. Esta ayuda solo responde sobre la configuración del backoffice y no modifica datos."
+
+
+def _ask_gemini_documentation(messages: list[DocumentationChatMessage], settings: Settings) -> str:
+    if settings.ai_mock:
+        return _documentation_chat_mock(messages)
+    model = settings.gemini_model.removeprefix("models/")
+    contents = [{"role": "user" if message.role == "user" else "model", "parts": [{"text": message.content}]} for message in messages]
+    payload = {
+        "systemInstruction": {"parts": [{"text": BACKOFFICE_HELP_CONTEXT}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700},
+    }
+    request = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+        raise HTTPException(status_code=502, detail="El servicio de ayuda de Gemini no está disponible") from exc
+    parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    answer = "\n".join(part.get("text", "") for part in parts if part.get("text"))
+    if not answer:
+        raise HTTPException(status_code=502, detail="Gemini no devolvió una respuesta de ayuda")
+    return answer.strip()
 
 
 @router.get("/summary")
@@ -559,6 +609,18 @@ def knowledge_summary(settings: Settings = Depends(get_settings)) -> dict[str, A
             return {"total": sum(row["count"] for row in rows), "by_kind": rows}
     except Exception as exc:
         raise database_error(exc) from exc
+
+
+@router.post("/documentation/chat")
+def documentation_chat(payload: DocumentationChatRequest, settings: Settings = Depends(get_settings)) -> dict[str, str]:  # noqa: B008
+    """Answer backoffice questions from controlled documentation context only."""
+
+    try:
+        return {"reply": _ask_gemini_documentation(payload.messages, settings)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="No se ha podido obtener la ayuda del backoffice") from exc
 
 
 @router.get("/knowledge/entries")
