@@ -133,7 +133,32 @@ def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tupl
     return tenant, service
 
 
-def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
+def _dependent_options(field: dict[str, Any], intake: dict[str, Any] | None = None) -> list[str]:
+    options = list(field.get("options") or [])
+    dependency = field.get("depends_on") or {}
+    if not isinstance(dependency, dict):
+        return options
+    controller_key = dependency.get("field")
+    options_by_value = dependency.get("options_by_value")
+    if not isinstance(controller_key, str) or not isinstance(options_by_value, dict):
+        return options
+    current_value = (intake or {}).get(controller_key)
+    if current_value in (None, ""):
+        return options
+    for expected, dependent_options in options_by_value.items():
+        if str(expected).casefold() == str(current_value).casefold() and isinstance(dependent_options, list):
+            return [str(option) for option in dependent_options if str(option).strip()]
+    return []
+
+
+def _effective_field(field: dict[str, Any], intake: dict[str, Any] | None = None) -> dict[str, Any]:
+    effective = dict(field)
+    effective["options"] = _dependent_options(field, intake)
+    return effective
+
+
+def _field_question(field: dict[str, Any], prompt_index: int = 0, intake: dict[str, Any] | None = None) -> str:
+    field = _effective_field(field, intake)
     label = field["label"].lower()
     if field.get("key") == COVERAGE_FIELD_KEY:
         return f"**{field['label'].rstrip()}**"
@@ -210,7 +235,8 @@ def _normalized_words(value: str) -> set[str]:
     return set(normalized.replace(",", " ").replace(".", " ").replace(";", " ").replace(":", " ").split())
 
 
-def _friendly_retry(field: dict[str, Any]) -> str:
+def _friendly_retry(field: dict[str, Any], intake: dict[str, Any] | None = None) -> str:
+    field = _effective_field(field, intake)
     label = field["label"].lower()
     if field.get("type") == "choice" and field.get("options"):
         options = field["options"]
@@ -226,9 +252,10 @@ def _friendly_retry(field: dict[str, Any]) -> str:
     return f"Gracias. Para continuar necesito que me indiques {label}."
 
 
-def _public_field(field: dict[str, Any] | None) -> dict[str, Any] | None:
+def _public_field(field: dict[str, Any] | None, intake: dict[str, Any] | None = None) -> dict[str, Any] | None:
     if not field:
         return None
+    field = _effective_field(field, intake)
     return {
         "key": field.get("key"),
         "label": field.get("label"),
@@ -350,7 +377,8 @@ def _next_missing(fields: list[dict[str, Any]], intake: dict[str, Any]) -> dict[
     return next((field for field in fields if field.get("required") and field["key"] not in intake), None)
 
 
-def _coerce_field(field: dict[str, Any], content: str) -> Any | None:
+def _coerce_field(field: dict[str, Any], content: str, intake: dict[str, Any] | None = None) -> Any | None:
+    field = _effective_field(field, intake)
     value = content.strip()
     field_type = field.get("type")
     if field_type == "number":
@@ -573,13 +601,13 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
         first_field = _next_missing(fields, {})
         opening = _opening_message(service, customer.get("name") or payload.customer_name)
         if first_field:
-            opening += f"\n\n{_field_question(first_field, 0)}"
+            opening += f"\n\n{_field_question(first_field, 0, {})}"
         request = conn.execute(
             "insert into public.horekia_requests (tenant_id, customer_id, job_type_id, status, intake_data, missing_fields, source) values (%s, %s, %s, 'new', %s, %s, 'chat') returning id, status, intake_data, missing_fields, created_at",
             (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in fields if field.get("required")])),
         ).fetchone()
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant["id"], request["id"], opening, Jsonb({"service": service["slug"]}), Jsonb({"source": "service_blueprint"})))
-        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field), "intake_data": {}, "status": request["status"]}
+        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field, {}), "intake_data": {}, "status": request["status"]}
 
 
 @router.post("/conversations/{request_id}/account")
@@ -670,16 +698,17 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         field = next((item for item in fields if item.get("key") == payload.field_key), None) if payload.field_key else _next_missing(fields, intake)
         coverage = None
         if field:
-            value = _coerce_field(field, payload.content)
+            value = _coerce_field(field, payload.content, intake)
             if value is None:
+                effective_field = _effective_field(field, intake)
                 reply = _ask_gemini_public(
                     service_name=service["name"],
-                    field=field,
+                    field=effective_field,
                     user_message=payload.content,
                     settings=settings,
-                ) or _friendly_retry(field)
+                ) or _friendly_retry(field, intake)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
-                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake}
+                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake), "intake_data": intake}
             if field.get("key") == COVERAGE_FIELD_KEY:
                 profile = conn.execute("select city, display_name from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
                 requested_location = str(value)
@@ -699,7 +728,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     else:
                         reply = "No he podido localizar esa ubicación. Indícame una ciudad o un código postal de cinco cifras para comprobar si está dentro de nuestro radio de actuación."
                     conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
-                    return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake, "coverage": coverage}
+                    return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake), "intake_data": intake, "coverage": coverage}
                 if coverage["status"] == "outside_radius":
                     intake[field["key"]] = value
                     distance = f"{coverage['distance_km']:.1f}".replace(".", ",")
@@ -722,13 +751,13 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             numeric_prompt_index = sum(
                 1 for item in blueprint["fields"] if item.get("type") == "number" and item.get("key") in intake
             )
-            reply = _field_question(next_field, numeric_prompt_index)
+            reply = _field_question(next_field, numeric_prompt_index, intake)
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb(missing), tenant_id, request_id))
             structured_data = {"field": next_field["key"]}
             if coverage:
                 structured_data["coverage"] = coverage
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(structured_data), Jsonb({"source": "service_blueprint"})))
-            response = {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field), "intake_data": intake}
+            response = {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field, intake), "intake_data": intake}
             if coverage:
                 response["coverage"] = coverage
                 response["eligible"] = True

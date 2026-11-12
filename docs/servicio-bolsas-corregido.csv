@@ -1,8 +1,8 @@
-service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata
+service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata,depends_on
 bolsas,service,,,Bolsas personalizadas,Servicio para preparar presupuestos de bolsas personalizadas con impresión.,,,,,,,,,,,,,,
 bolsas,field,1,quantity,¿Cuántas bolsas necesitas?,Indica la cantidad total de bolsas.,number,,true,unidad,1,,250,,,,,,,
 bolsas,field,2,bag_type,¿Qué tipo de bolsa necesitas?,Escoge el formato principal de la bolsa.,choice,tote bag|mochila|saco,true,,,,tote bag,,,,,,,
-bolsas,field,3,bag_material,¿Qué material prefieres?,Elige el material de la bolsa.,choice,algodón|lona|rafia,true,,,,algodón,,,,,,,
+bolsas,field,3,bag_material,¿Qué material prefieres?,Las opciones disponibles cambian según el tipo de bolsa elegido.,choice,algodón|hilo|lana|poliéster|rafia,true,,,,algodón,,,,,,,,"{""field"":""bag_type"",""options_by_value"":{""tote bag"":[""algodón"",""hilo"",""lana""],""mochila"":[""poliéster"",""algodón""],""saco"":[""rafia"",""algodón""]}}"
 bolsas,field,4,print_type,¿Qué tipo de impresión quieres?,Elige la técnica de impresión para tus bolsas.,choice,digital|serigrafía|transfer|sublimación,true,,,,digital,,,,,,,
 bolsas,field,5,print_color_mode,¿Cuántos colores quieres utilizar?,Elige el modo de color de la impresión de tus bolsas.,choice,blanco y negro|2 colores|4 colores|color completo,true,,,,2 colores,,,,,,,
 bolsas,field,6,print_sides,¿Quieres imprimir las bolsas por una cara o por las dos?,Indica cuántas caras de la bolsa llevarán impresión.,choice,una cara|dos caras,true,,,,una cara,,,,,,,

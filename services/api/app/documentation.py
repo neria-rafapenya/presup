@@ -42,6 +42,10 @@ CSV de patrón de servicio:
 - La importación mantiene la fusión segura por defecto. El backoffice ofrece un modo
   explícito de reemplazo para que también se eliminen los elementos que no estén en el CSV.
 - Las definiciones de rule y measure deben ser JSON válido.
+- Un field de tipo choice puede incluir depends_on como JSON con field y options_by_value
+  para que sus opciones dependan de una respuesta anterior. Por ejemplo, material puede
+  ofrecer opciones distintas según bag_type. El Diseñador permite configurarlo sin escribir
+  el JSON.
 
 Regla de cálculo:
 - Gemini interpreta la petición y formula preguntas.
