@@ -370,9 +370,11 @@ export default function App() {
           <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
           <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
-          <NavButton label="Servicios y fichas" active={screen === "services"} onPress={() => navigate("services")} />
+          <NavButton label="Servicios y fichas" active={screen === "services" || screen === "designer"} onPress={() => navigate("services")} />
+          <View style={styles.subnav}>
+            <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); navigate("designer", designerService?.id ?? undefined); }} />
+          </View>
           <NavButton label="Base de conocimiento" active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
-          <NavButton label="Diseñador de servicios" active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); navigate("designer", designerService?.id ?? undefined); }} />
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
         </View>
@@ -426,8 +428,8 @@ export default function App() {
   );
 }
 
-function NavButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return <Pressable style={[styles.navButton, active && styles.navButtonActive]} onPress={onPress}><Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text></Pressable>;
+function NavButton({ label, active, onPress, child = false }: { label: string; active: boolean; onPress: () => void; child?: boolean }) {
+  return <Pressable style={[styles.navButton, child && styles.navButtonChild, active && styles.navButtonActive]} onPress={onPress}><Text style={[styles.navLabel, child && styles.navLabelChild, active && styles.navLabelActive]}>{label}</Text></Pressable>;
 }
 
 function Dashboard({ summary }: { summary: Summary }) {
@@ -1252,9 +1254,12 @@ const styles = StyleSheet.create({
   brand: { color: "#e7f2e9", fontSize: 22, fontWeight: "800", letterSpacing: 2 },
   brandSub: { color: "#8fc6a9", fontSize: 11, letterSpacing: 2, marginTop: 4 },
   nav: { gap: 6, marginTop: 48 },
+  subnav: { marginLeft: 12, paddingLeft: 8, borderLeftWidth: 1, borderLeftColor: "#3b6b5a", gap: 4 },
   navButton: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12 },
+  navButtonChild: { paddingVertical: 9, paddingLeft: 12 },
   navButtonActive: { backgroundColor: "#28604d" },
   navLabel: { color: "#b4c8bd", fontSize: 14 },
+  navLabelChild: { fontSize: 13 },
   navLabelActive: { color: "#ffffff", fontWeight: "700" },
   sidebarBottom: { marginTop: "auto", paddingTop: 32 },
   sidebarHint: { color: "#8fc6a9", fontSize: 12 },
