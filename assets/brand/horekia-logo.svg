@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 220" role="img" aria-labelledby="title desc">
-  <title id="title">HorekIA</title>
-  <desc id="desc">Anagrama H y marca HorekIA</desc>
-  <rect x="35" y="35" width="150" height="150" rx="32" fill="#17332D"/>
-  <path fill="#FFFFFF" d="M75 67h23v87H75zM123 67h22v87h-22zM92 100h36v23H92z"/>
-  <text x="250" y="143" fill="#17332D" font-family="Arial, Helvetica, sans-serif" font-size="86" font-weight="900" letter-spacing="7">HOREKIA</text>
-</svg>
