@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 type Service = { slug: string; name: string; description?: string | null };
@@ -33,8 +33,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesScrollRef = useRef<ScrollView | null>(null);
 
   useEffect(() => { void loadServices(); }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => messagesScrollRef.current?.scrollToEnd({ animated: true }), 40);
+    return () => clearTimeout(timer);
+  }, [messages, sending]);
 
   const loadServices = async () => {
     setLoading(true); setError(null);
@@ -75,7 +81,7 @@ export default function App() {
           {loading ? <ActivityIndicator color="#258269" size="large" style={styles.loader} /> : services.length === 0 ? <Text style={styles.empty}>No hay servicios publicados todavía.</Text> : <View style={styles.services}>{services.map((service) => <Pressable key={service.slug} style={styles.service} onPress={() => void startConversation(service)} disabled={sending}><View style={styles.serviceCopy}><Text style={styles.serviceTitle}>{service.name}</Text><Text style={styles.serviceDescription}>{service.description || "Preparar una solicitud de presupuesto."}</Text></View><Text style={styles.serviceArrow}>→</Text></Pressable>)}</View>}
         </> : <>
           <View style={styles.chatHeader}><View><Text style={styles.title}>{selectedService.name}</Text><Text style={styles.subtitle}>Asistente de presupuesto</Text></View><Pressable onPress={restart}><Text style={styles.restart}>Cambiar servicio</Text></Pressable></View>
-          <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>{messages.map((message, index) => <View key={`${message.sender}-${index}`} style={[styles.message, message.sender === "customer" ? styles.customerMessage : styles.assistantMessage]}><PublicMessageBody body={message.body} /></View>)}{sending ? <ActivityIndicator color="#258269" size="small" style={styles.chatLoader} /> : null}</ScrollView>
+          <ScrollView ref={messagesScrollRef} style={styles.messages} contentContainerStyle={styles.messagesContent}>{messages.map((message, index) => <View key={`${message.sender}-${index}`} style={[styles.message, message.sender === "customer" ? styles.customerMessage : styles.assistantMessage]}><PublicMessageBody body={message.body} /></View>)}{sending ? <ActivityIndicator color="#258269" size="small" style={styles.chatLoader} /> : null}</ScrollView>
           {quote ? <View style={styles.quote}><Text style={styles.quoteLabel}>Solicitud preparada</Text><Text style={styles.quoteValue}>{Number(quote.total).toLocaleString("es-ES", { style: "currency", currency: quote.currency })}</Text><Text style={styles.quoteHint}>El presupuesto queda pendiente de revisión por la empresa.</Text></View> : null}
           <View style={styles.composer}><TextInput style={styles.input} value={draft} onChangeText={setDraft} placeholder="Escribe tu respuesta…" editable={!sending} onSubmitEditing={() => void sendMessage()} returnKeyType="send" /><Pressable style={styles.send} onPress={() => void sendMessage()} disabled={sending || !draft.trim()}><Text style={styles.sendLabel}>{sending ? "…" : "Enviar"}</Text></Pressable></View>
         </>}

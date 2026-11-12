@@ -83,7 +83,7 @@ def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tupl
     return tenant, service
 
 
-def _field_question(field: dict[str, Any]) -> str:
+def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
     label = field["label"].lower()
     if field.get("type") == "choice" and field.get("options"):
         subject = label.removeprefix("tipo de ")
@@ -93,6 +93,8 @@ def _field_question(field: dict[str, Any]) -> str:
         choices = ", ".join(f"**{option}**" for option in options[:-1]) + f" o **{options[-1]}**"
         return f"¿Qué {subject} prefieres? {choices}."
     if field.get("type") == "number":
+        prefixes = ("Bien", "Vale", "Ok", "Recibido")
+        prefix = prefixes[prompt_index % len(prefixes)]
         unit_words = {
             "m²": "metros cuadrados",
             "m2": "metros cuadrados",
@@ -108,10 +110,10 @@ def _field_question(field: dict[str, Any]) -> str:
         unit = unit_words.get(str(field.get("unit", "")).lower())
         if unit:
             if label in {"unidades", "cantidad"}:
-                return f"Bien, ¿cuántas {unit} necesitas?"
+                return f"{prefix}, ¿cuántas {unit} necesitas?"
             article = "la " if label.startswith(("superficie", "altura", "anchura", "longitud", "distancia")) else ""
-            return f"Bien, ¿cuántos {unit} tiene {article}{label}?"
-        return f"Bien, ¿qué cantidad de {label} necesitas?"
+            return f"{prefix}, ¿cuántos {unit} tiene {article}{label}?"
+        return f"{prefix}, ¿qué cantidad de {label} necesitas?"
     question = field["label"]
     if field.get("unit"):
         question += f" [{field['unit']}]"
@@ -244,7 +246,7 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
         first_field = _next_missing(blueprint["fields"], {})
         opening = _opening_message(service)
         if first_field:
-            opening += f"\n\n{_field_question(first_field)}"
+            opening += f"\n\n{_field_question(first_field, 0)}"
         request = conn.execute(
             "insert into public.horekia_requests (tenant_id, customer_id, job_type_id, status, intake_data, missing_fields, source) values (%s, %s, %s, 'new', %s, %s, 'chat') returning id, status, intake_data, missing_fields, created_at",
             (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in blueprint["fields"] if field.get("required")])),
@@ -285,7 +287,10 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         next_field = _next_missing(blueprint["fields"], intake)
         missing = [item["key"] for item in blueprint["fields"] if item.get("required") and item["key"] not in intake]
         if next_field:
-            reply = _field_question(next_field)
+            numeric_prompt_index = sum(
+                1 for item in blueprint["fields"] if item.get("type") == "number" and item.get("key") in intake
+            )
+            reply = _field_question(next_field, numeric_prompt_index)
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb(missing), tenant_id, request_id))
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"field": next_field["key"]}), Jsonb({"source": "service_blueprint"})))
             return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "intake_data": intake}
