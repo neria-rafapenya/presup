@@ -4,6 +4,7 @@ from decimal import Decimal
 import json
 import ssl
 from typing import Any
+import unicodedata
 import urllib.error
 import urllib.request
 from uuid import UUID
@@ -143,6 +144,12 @@ def _opening_message(service: dict[str, Any]) -> str:
     return f"{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
 
 
+def _normalized_words(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFD", value.lower())
+    normalized = "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+    return set(normalized.replace(",", " ").replace(".", " ").replace(";", " ").replace(":", " ").split())
+
+
 def _friendly_retry(field: dict[str, Any]) -> str:
     label = field["label"].lower()
     if field.get("type") == "choice" and field.get("options"):
@@ -181,7 +188,8 @@ def _ask_gemini_public(
     system = (
         "Eres el asistente conversacional de una empresa que prepara presupuestos. "
         "Estás ayudando a un cliente que no ha respondido de forma inequívoca a una pregunta. "
-        "Responde en español, con tono cercano, breve y claro. Explica qué significa la pregunta "
+        "Responde en español, con tono cercano, breve y claro. No empieces con Hola ni con otro saludo: "
+        "la conversación ya está en curso. Explica qué significa la pregunta "
         "si el cliente pide aclaración y vuelve a pedir el dato. No inventes precios, no calcules "
         "importes y no cambies de servicio. Si el mensaje no es una aclaración, formula la pregunta "
         "de forma natural. Devuelve únicamente el texto que verá el cliente, sin encabezados técnicos."
@@ -237,12 +245,13 @@ def _coerce_field(field: dict[str, Any], content: str) -> Any | None:
         return None
     if field_type == "choice":
         options = field.get("options") or []
-        normalized = value.lower()
-        exact = next((option for option in options if option.lower() == normalized), None)
+        normalized = " ".join(sorted(_normalized_words(value)))
+        exact = next((option for option in options if " ".join(sorted(_normalized_words(option))) == normalized), None)
         if exact:
             return exact
-        words = normalized.replace(",", " ").replace(".", " ").replace(";", " ").replace(":", " ").split()
-        return next((option for option in options if option.lower() in words), None)
+        input_words = _normalized_words(value)
+        matches = [option for option in options if _normalized_words(option) & input_words]
+        return matches[0] if len(matches) == 1 else None
     return value or None
 
 
