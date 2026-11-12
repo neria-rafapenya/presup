@@ -442,7 +442,7 @@ def _deliver_quote_email(
     service: dict[str, Any],
 ) -> tuple[bool, str | None]:
     customer = conn.execute(
-        "select id, name, email from public.horekia_customers c join public.horekia_requests r on r.tenant_id = c.tenant_id and r.customer_id = c.id where r.tenant_id = %s and r.id = %s",
+        "select c.id, c.name, c.email from public.horekia_customers c join public.horekia_requests r on r.tenant_id = c.tenant_id and r.customer_id = c.id where r.tenant_id = %s and r.id = %s",
         (tenant_id, request_id),
     ).fetchone()
     if not customer or not customer["email"]:
