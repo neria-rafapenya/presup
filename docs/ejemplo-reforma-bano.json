@@ -1,0 +1,185 @@
+{
+  "fields": [
+    {
+      "key": "tipo_de_reforma",
+      "label": "Tipo de reforma",
+      "type": "choice",
+      "required": true,
+      "options": ["parcial", "integral"],
+      "help_text": "Indica si se reforma solo una parte del baño o si se realiza una reforma completa.",
+      "example": "parcial"
+    },
+    {
+      "key": "superficie_del_suelo",
+      "label": "Superficie del suelo",
+      "type": "number",
+      "required": true,
+      "unit": "m²",
+      "min": 1,
+      "help_text": "Indica los metros cuadrados aproximados de suelo que se van a reformar.",
+      "example": "6"
+    },
+    {
+      "key": "superficie_de_paredes",
+      "label": "Superficie de paredes",
+      "type": "number",
+      "required": true,
+      "unit": "m²",
+      "min": 1,
+      "help_text": "Indica los metros cuadrados aproximados de paredes que se van a revestir.",
+      "example": "22"
+    },
+    {
+      "key": "tipo_de_suelo",
+      "label": "Tipo de material del suelo",
+      "type": "choice",
+      "required": true,
+      "options": ["baldosa gres", "porcelánico", "microcemento"],
+      "help_text": "Escoge el acabado principal previsto para el suelo.",
+      "example": "baldosa gres"
+    },
+    {
+      "key": "tipo_de_pared",
+      "label": "Tipo de revestimiento de pared",
+      "type": "choice",
+      "required": true,
+      "options": ["baldosa gres", "porcelánico", "microcemento"],
+      "help_text": "Escoge el material que se colocará en las paredes.",
+      "example": "porcelánico"
+    },
+    {
+      "key": "retirada_azulejos",
+      "label": "¿Hay que retirar azulejos existentes?",
+      "type": "boolean",
+      "required": true,
+      "help_text": "Responde sí si hay que retirar el revestimiento antes de colocar el nuevo.",
+      "example": "sí"
+    },
+    {
+      "key": "retirada_sanitarios",
+      "label": "¿Hay que retirar sanitarios existentes?",
+      "type": "boolean",
+      "required": true,
+      "help_text": "Incluye la retirada de los sanitarios que se vayan a sustituir.",
+      "example": "sí"
+    },
+    {
+      "key": "incluye_inodoro",
+      "label": "¿Quieres incluir un inodoro nuevo?",
+      "type": "boolean",
+      "required": true,
+      "example": "sí"
+    },
+    {
+      "key": "incluye_lavabo",
+      "label": "¿Quieres incluir un lavabo nuevo?",
+      "type": "boolean",
+      "required": true,
+      "example": "sí"
+    },
+    {
+      "key": "incluye_bide",
+      "label": "¿Quieres incluir un bidé nuevo?",
+      "type": "boolean",
+      "required": true,
+      "example": "no"
+    },
+    {
+      "key": "incluye_plato_ducha",
+      "label": "¿Quieres incluir un plato de ducha?",
+      "type": "boolean",
+      "required": true,
+      "example": "sí"
+    },
+    {
+      "key": "incluye_mampara",
+      "label": "¿Quieres incluir una mampara?",
+      "type": "boolean",
+      "required": true,
+      "example": "sí"
+    },
+    {
+      "key": "incluye_mueble_bano",
+      "label": "¿Quieres incluir un mueble de baño?",
+      "type": "boolean",
+      "required": true,
+      "example": "sí"
+    },
+    {
+      "key": "tipo_de_griferia",
+      "label": "Tipo de grifería",
+      "type": "choice",
+      "required": true,
+      "options": ["ninguna", "estándar", "premium"],
+      "help_text": "Escoge la calidad de la grifería que quieres incluir.",
+      "example": "estándar"
+    },
+    {
+      "key": "retirada_escombros",
+      "label": "¿Quieres incluir retirada de escombros?",
+      "type": "boolean",
+      "required": true,
+      "example": "sí"
+    },
+    {
+      "key": "desplazamiento_fuera_de_zona",
+      "label": "¿La vivienda está fuera de nuestra zona habitual?",
+      "type": "boolean",
+      "required": true,
+      "help_text": "La empresa puede confirmar este dato según el código postal.",
+      "example": "no"
+    }
+  ],
+  "items": [
+    { "sku": "material_suelo_gres", "name": "Baldosa de gres para suelo", "description": "Material de suelo de gres. Precio ficticio de ejemplo.", "unit": "m²", "base_price": 22, "currency": "EUR", "metadata": { "familia": "suelo" } },
+    { "sku": "material_suelo_porcelanico", "name": "Porcelánico para suelo", "description": "Material porcelánico para suelo. Precio ficticio de ejemplo.", "unit": "m²", "base_price": 29, "currency": "EUR", "metadata": { "familia": "suelo" } },
+    { "sku": "material_suelo_microcemento", "name": "Microcemento para suelo", "description": "Acabado de microcemento para suelo. Precio ficticio de ejemplo.", "unit": "m²", "base_price": 42, "currency": "EUR", "metadata": { "familia": "suelo" } },
+    { "sku": "material_pared_gres", "name": "Baldosa de gres para pared", "description": "Revestimiento de pared de gres. Precio ficticio de ejemplo.", "unit": "m²", "base_price": 24, "currency": "EUR", "metadata": { "familia": "pared" } },
+    { "sku": "material_pared_porcelanico", "name": "Porcelánico para pared", "description": "Revestimiento porcelánico de pared. Precio ficticio de ejemplo.", "unit": "m²", "base_price": 31, "currency": "EUR", "metadata": { "familia": "pared" } },
+    { "sku": "material_pared_microcemento", "name": "Microcemento para pared", "description": "Acabado de microcemento para pared. Precio ficticio de ejemplo.", "unit": "m²", "base_price": 48, "currency": "EUR", "metadata": { "familia": "pared" } },
+    { "sku": "mano_obra_general", "name": "Mano de obra general", "description": "Horas estimadas de preparación y ejecución. Precio ficticio de ejemplo.", "unit": "hora", "base_price": 32, "currency": "EUR", "metadata": { "familia": "mano_obra" } },
+    { "sku": "retirada_azulejos", "name": "Retirada de azulejos", "description": "Desmontaje y retirada del revestimiento existente.", "unit": "m²", "base_price": 12, "currency": "EUR", "metadata": { "familia": "retirada" } },
+    { "sku": "retirada_sanitarios", "name": "Retirada de sanitarios", "description": "Desmontaje de sanitarios existentes.", "unit": "unidad", "base_price": 35, "currency": "EUR", "metadata": { "familia": "retirada" } },
+    { "sku": "inodoro", "name": "Inodoro", "description": "Inodoro estándar de ejemplo.", "unit": "unidad", "base_price": 180, "currency": "EUR", "metadata": { "familia": "sanitarios" } },
+    { "sku": "lavabo", "name": "Lavabo", "description": "Lavabo estándar de ejemplo.", "unit": "unidad", "base_price": 140, "currency": "EUR", "metadata": { "familia": "sanitarios" } },
+    { "sku": "bide", "name": "Bidé", "description": "Bidé estándar de ejemplo.", "unit": "unidad", "base_price": 150, "currency": "EUR", "metadata": { "familia": "sanitarios" } },
+    { "sku": "plato_ducha", "name": "Plato de ducha", "description": "Plato de ducha estándar de ejemplo.", "unit": "unidad", "base_price": 240, "currency": "EUR", "metadata": { "familia": "ducha" } },
+    { "sku": "mampara", "name": "Mampara", "description": "Mampara estándar de ejemplo.", "unit": "unidad", "base_price": 350, "currency": "EUR", "metadata": { "familia": "ducha" } },
+    { "sku": "mueble_bano", "name": "Mueble de baño", "description": "Mueble de baño estándar de ejemplo.", "unit": "unidad", "base_price": 420, "currency": "EUR", "metadata": { "familia": "mobiliario" } },
+    { "sku": "griferia_estandar", "name": "Grifería estándar", "description": "Grifería estándar de ejemplo.", "unit": "unidad", "base_price": 95, "currency": "EUR", "metadata": { "familia": "griferia" } },
+    { "sku": "griferia_premium", "name": "Grifería premium", "description": "Grifería premium de ejemplo.", "unit": "unidad", "base_price": 240, "currency": "EUR", "metadata": { "familia": "griferia" } },
+    { "sku": "retirada_escombros", "name": "Retirada de escombros", "description": "Carga y retirada de escombros. Precio ficticio de ejemplo.", "unit": "servicio", "base_price": 180, "currency": "EUR", "metadata": { "familia": "extra" } },
+    { "sku": "suplemento_reforma_integral", "name": "Suplemento de reforma integral", "description": "Coste fijo orientativo de coordinación de reforma integral.", "unit": "servicio", "base_price": 600, "currency": "EUR", "metadata": { "familia": "extra" } },
+    { "sku": "desplazamiento_fuera_zona", "name": "Desplazamiento fuera de zona", "description": "Suplemento de desplazamiento fuera de la zona habitual.", "unit": "servicio", "base_price": 65, "currency": "EUR", "metadata": { "familia": "extra" } }
+  ],
+  "rules": [
+    { "code": "material_suelo_gres_by_area", "kind": "formula", "priority": 10, "definition": { "item": "material_suelo_gres", "quantity": "suelo_con_desperdicio", "when": { "tipo_de_suelo": "baldosa gres" } } },
+    { "code": "material_suelo_porcelanico_by_area", "kind": "formula", "priority": 11, "definition": { "item": "material_suelo_porcelanico", "quantity": "suelo_con_desperdicio", "when": { "tipo_de_suelo": "porcelánico" } } },
+    { "code": "material_suelo_microcemento_by_area", "kind": "formula", "priority": 12, "definition": { "item": "material_suelo_microcemento", "quantity": "suelo_con_desperdicio", "when": { "tipo_de_suelo": "microcemento" } } },
+    { "code": "material_pared_gres_by_area", "kind": "formula", "priority": 20, "definition": { "item": "material_pared_gres", "quantity": "paredes_con_desperdicio", "when": { "tipo_de_pared": "baldosa gres" } } },
+    { "code": "material_pared_porcelanico_by_area", "kind": "formula", "priority": 21, "definition": { "item": "material_pared_porcelanico", "quantity": "paredes_con_desperdicio", "when": { "tipo_de_pared": "porcelánico" } } },
+    { "code": "material_pared_microcemento_by_area", "kind": "formula", "priority": 22, "definition": { "item": "material_pared_microcemento", "quantity": "paredes_con_desperdicio", "when": { "tipo_de_pared": "microcemento" } } },
+    { "code": "mano_obra_by_hours", "kind": "formula", "priority": 30, "definition": { "item": "mano_obra_general", "quantity": "horas_mano_obra" } },
+    { "code": "retirada_azulejos_by_area", "kind": "formula", "priority": 40, "definition": { "item": "retirada_azulejos", "quantity": "paredes_con_desperdicio", "when": { "retirada_azulejos": true } } },
+    { "code": "retirada_sanitarios_fixed", "kind": "formula", "priority": 41, "definition": { "item": "retirada_sanitarios", "quantity": 1, "when": { "retirada_sanitarios": true } } },
+    { "code": "include_inodoro", "kind": "formula", "priority": 50, "definition": { "item": "inodoro", "quantity": 1, "when": { "incluye_inodoro": true } } },
+    { "code": "include_lavabo", "kind": "formula", "priority": 51, "definition": { "item": "lavabo", "quantity": 1, "when": { "incluye_lavabo": true } } },
+    { "code": "include_bide", "kind": "formula", "priority": 52, "definition": { "item": "bide", "quantity": 1, "when": { "incluye_bide": true } } },
+    { "code": "include_plato_ducha", "kind": "formula", "priority": 53, "definition": { "item": "plato_ducha", "quantity": 1, "when": { "incluye_plato_ducha": true } } },
+    { "code": "include_mampara", "kind": "formula", "priority": 54, "definition": { "item": "mampara", "quantity": 1, "when": { "incluye_mampara": true } } },
+    { "code": "include_mueble_bano", "kind": "formula", "priority": 55, "definition": { "item": "mueble_bano", "quantity": 1, "when": { "incluye_mueble_bano": true } } },
+    { "code": "griferia_estandar_fixed", "kind": "formula", "priority": 60, "definition": { "item": "griferia_estandar", "quantity": 1, "when": { "tipo_de_griferia": "estándar" } } },
+    { "code": "griferia_premium_fixed", "kind": "formula", "priority": 61, "definition": { "item": "griferia_premium", "quantity": 1, "when": { "tipo_de_griferia": "premium" } } },
+    { "code": "retirada_escombros_fixed", "kind": "surcharge", "priority": 70, "definition": { "item": "retirada_escombros", "quantity": 1, "when": { "retirada_escombros": true } } },
+    { "code": "reforma_integral_surcharge", "kind": "surcharge", "priority": 71, "definition": { "item": "suplemento_reforma_integral", "quantity": 1, "when": { "tipo_de_reforma": "integral" } } },
+    { "code": "desplazamiento_surcharge", "kind": "surcharge", "priority": 72, "definition": { "item": "desplazamiento_fuera_zona", "quantity": 1, "when": { "desplazamiento_fuera_de_zona": true } } },
+    { "code": "minimum_bathroom_quote", "kind": "minimum", "priority": 200, "definition": { "amount": 450 } }
+  ],
+  "measures": [
+    { "code": "suelo_con_desperdicio", "expression": { "left": "superficie_del_suelo", "right": 1.1, "operation": "multiply" } },
+    { "code": "paredes_con_desperdicio", "expression": { "left": "superficie_de_paredes", "right": 1.1, "operation": "multiply" } },
+    { "code": "horas_suelo", "expression": { "left": "superficie_del_suelo", "right": 0.5, "operation": "multiply" } },
+    { "code": "horas_paredes", "expression": { "left": "superficie_de_paredes", "right": 0.1, "operation": "multiply" } },
+    { "code": "horas_mano_obra", "expression": { "left": "horas_suelo", "right": "horas_paredes", "operation": "add" } }
+  ]
+}

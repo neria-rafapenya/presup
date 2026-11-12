@@ -1,0 +1,42 @@
+[
+  {
+    "code": "suelo_con_desperdicio",
+    "expression": {
+      "left": "superficie_del_suelo",
+      "right": 1.1,
+      "operation": "multiply"
+    }
+  },
+  {
+    "code": "paredes_con_desperdicio",
+    "expression": {
+      "left": "superficie_de_paredes",
+      "right": 1.1,
+      "operation": "multiply"
+    }
+  },
+  {
+    "code": "horas_suelo",
+    "expression": {
+      "left": "superficie_del_suelo",
+      "right": 0.5,
+      "operation": "multiply"
+    }
+  },
+  {
+    "code": "horas_paredes",
+    "expression": {
+      "left": "superficie_de_paredes",
+      "right": 0.1,
+      "operation": "multiply"
+    }
+  },
+  {
+    "code": "horas_mano_obra",
+    "expression": {
+      "left": "horas_suelo",
+      "right": "horas_paredes",
+      "operation": "add"
+    }
+  }
+]
