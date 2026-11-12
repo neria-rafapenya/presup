@@ -435,8 +435,7 @@ export default function App() {
       await load();
       return true;
     } catch (caughtError) {
-      const message = caughtError instanceof Error && caughtError.message === "SERVICE_NAME_REQUIRED" ? "Para crear un servicio nuevo, el CSV debe incluir una fila service con su nombre en title." : "No se ha podido importar el patrón de servicio. Revisa los códigos y el JSON de las reglas.";
-      setError(message);
+      setError(null);
       return false;
     } finally {
       setSaving(false);
@@ -864,6 +863,7 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
   const [sourceName, setSourceName] = useState("");
   const [payload, setPayload] = useState<ServiceImportData | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [importAlert, setImportAlert] = useState<string | null>(null);
 
   const chooseCsv = () => {
     if (typeof document === "undefined") return;
@@ -877,6 +877,7 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
       const parsed = parseServiceCsv(await file.text());
       setPayload(parsed.data ?? null);
       setParseError(parsed.error ?? null);
+      setImportAlert(parsed.error ?? null);
     };
     input.click();
   };
@@ -884,13 +885,17 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
   const importService = async () => {
     if (!payload) return;
     if (!services.some((service) => service.slug === payload.serviceSlug) && !payload.serviceName) {
-      setParseError("El servicio no existe. Añade una fila record_type=service con el nombre en title para crearlo.");
+      const message = "El servicio no existe. Añade una fila record_type=service con el nombre en title para crearlo.";
+      setParseError(message);
+      setImportAlert(message);
       return;
     }
     if (await onImport(payload)) {
       setPayload(null);
       setSourceName("");
       setParseError(null);
+    } else {
+      setImportAlert("No se ha podido importar el patrón de servicio. Revisa los códigos y el JSON de las reglas.");
     }
   };
 
@@ -899,9 +904,22 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
     <Text style={styles.listMeta}>Usa un CSV explícito para crear o ampliar un servicio con filas service, field, item, rule y measure. Las filas se fusionan por código y no borran el patrón existente.</Text>
     <Pressable style={styles.secondaryButton} onPress={chooseCsv}><Text style={styles.secondaryLabel}>{sourceName || "Seleccionar CSV de patrón"}</Text></Pressable>
     {payload ? <Text style={styles.wizardText}>Servicio: {payload.serviceSlug} · {payload.fields.length} pregunta(s) · {payload.items.length} concepto(s) · {payload.rules.length} regla(s) · {payload.measures.length} medida(s)</Text> : null}
-    {parseError ? <Text style={styles.error}>{parseError}</Text> : null}
     <Pressable style={styles.primaryButton} onPress={() => void importService()} disabled={saving || !payload || Boolean(parseError)}><Text style={styles.primaryLabel}>{saving ? "Importando patrón…" : "Importar patrón de servicio"}</Text></Pressable>
+    <ImportAlertModal message={importAlert} onClose={() => setImportAlert(null)} />
   </View>;
+}
+
+function ImportAlertModal({ message, onClose }: { message: string | null; onClose: () => void }) {
+  return <Modal visible={Boolean(message)} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.modalBackdrop}>
+      <View style={styles.alertCard}>
+        <View style={styles.alertIcon}><Text style={styles.alertIconLabel}>!</Text></View>
+        <Text style={styles.alertTitle}>No se ha podido importar el patrón</Text>
+        <Text style={styles.alertMessage}>{message}</Text>
+        <Pressable style={styles.alertButton} onPress={onClose}><Text style={styles.primaryLabel}>Entendido</Text></Pressable>
+      </View>
+    </View>
+  </Modal>;
 }
 
 function KnowledgeTable({ entries, onUpdate, onDelete, saving }: { entries: KnowledgeEntry[]; onUpdate: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDelete: (entryId: string) => Promise<boolean>; saving: boolean }) {
@@ -1886,6 +1904,12 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: "rgba(23, 51, 45, 0.36)", alignItems: "center", justifyContent: "center", padding: 24 },
   modalCard: { width: "100%", maxWidth: 620, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   confirmCard: { width: "100%", maxWidth: 520, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  alertCard: { width: "100%", maxWidth: 480, backgroundColor: "#ffffff", borderRadius: 16, padding: 26, alignItems: "center", shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 16 },
+  alertIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#fdecea", alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  alertIconLabel: { color: "#a53d35", fontSize: 24, fontWeight: "800" },
+  alertTitle: { color: "#17332d", fontSize: 18, fontWeight: "800", textAlign: "center" },
+  alertMessage: { color: "#526078", fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 10 },
+  alertButton: { alignSelf: "stretch", backgroundColor: "#258269", borderRadius: 9, alignItems: "center", paddingVertical: 12, marginTop: 20 },
   confirmTitle: { color: "#17332d", fontSize: 20, fontWeight: "800", marginTop: 8 },
   confirmWarning: { color: "#a53d35", backgroundColor: "#fdecea", borderRadius: 8, padding: 12, marginTop: 14, fontSize: 13, fontWeight: "700" },
   designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, position: "relative", overflow: "hidden" },
