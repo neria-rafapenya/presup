@@ -48,4 +48,22 @@ Cómo resolver dudas:
 - Para editar preguntas, catálogo o reglas: abrir Diseñador de servicios y pulsar Diseñar.
 - Para cargar datos generales: abrir Servicios y fichas, Base de conocimiento.
 - Para consultar ejemplos: abrir el menú Documentación.
+
+Guía de Servicios:
+- Un servicio representa una línea de trabajo que el tenant quiere presupuestar.
+- Para crear uno: abrir Wizard, paso Oferta y servicios, pulsar Nuevo servicio, escribir
+  nombre y descripción y guardar. El slug se genera automáticamente.
+- Para diseñarlo: localizarlo en la lista y pulsar Diseñar. El diseñador contiene Preguntas,
+  Catálogo, Reglas y Medidas.
+- En Preguntas se añaden Texto, Número, Opción, Sí/No o Imagen. En una reforma de baño son
+  ejemplos Tipo de reforma, Superficie del suelo, Material del suelo y Retirada de azulejos.
+- En Catálogo se añaden materiales, productos, mano de obra y extras con unidad y precio base.
+- En Reglas se configuran mínimos, descuentos, recargos y fórmulas deterministas. Ejemplo:
+  floor_material_by_area calcula superficie_suelo por precio del material de suelo.
+- Cada bloque tiene su propio botón Guardar y la pantalla permanece abierta para continuar.
+- También se puede importar un patrón CSV desde Base de conocimiento. Usa record_type=field
+  para preguntas, item para conceptos, rule para reglas y measure para medidas. service_slug
+  identifica el servicio y code identifica cada bloque; las filas se fusionan por code.
+- Ejemplo de reforma de baño: preguntas de superficie y material, conceptos de baldosa a 22
+  EUR por m², mano de obra a 32 EUR por hora y retirada de azulejos a 12 EUR por m².
 """.strip()
