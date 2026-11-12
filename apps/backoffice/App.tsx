@@ -859,8 +859,6 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
           <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={requestClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
           <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
-            <Text style={styles.sectionLabel}>Empezar en blanco</Text>
-            <Text style={styles.listMeta}>Los servicios nuevos empiezan sin preguntas, productos ni reglas. Añade solo los bloques que necesite tu negocio. Si te sirve, puedes cargar después una ayuda orientativa y editarla por completo.</Text>
             <View style={styles.templateChoices}>
               <Pressable style={styles.smallButton} onPress={() => { markDesignerDirty(); resetFieldEditorIds([]); setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
               <TemplateSelector onSelect={loadTemplate} />
