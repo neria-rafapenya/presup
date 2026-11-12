@@ -439,7 +439,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake}
             if field.get("key") == "ubicacion_servicio":
-                profile = conn.execute("select city from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
+                profile = conn.execute("select city, display_name from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
                 requested_location = str(value)
                 coverage = check_service_coverage(profile["city"] if profile else None, requested_location)
                 if coverage.get("reason") == "location_not_found":
@@ -460,7 +460,16 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake, "coverage": coverage}
                 if coverage["status"] == "outside_radius":
                     intake[field["key"]] = value
-                    reply = f"Lo siento, no es posible calcular este presupuesto porque la ubicación indicada está a {coverage['distance_km']} km de nuestra ciudad de referencia y nuestro radio de actuación es inferior a 100 km."
+                    distance = f"{coverage['distance_km']:.1f}".replace(".", ",")
+                    radius = f"{coverage['radius_km']:.0f}"
+                    business_name = (profile["display_name"] if profile else None) or "la empresa"
+                    contact_name = f"**{business_name}**" if business_name != "la empresa" else business_name
+                    reply = (
+                        f"Lo siento, en esta ocasión no podemos preparar el presupuesto porque la ubicación está a **{distance} km** "
+                        f"de nuestra ciudad y nuestro radio habitual de actuación es de **{radius} km**.\n\n"
+                        f"Si necesitas realizar la reforma en esa dirección, puedes contactar directamente con {contact_name} "
+                        "para consultar si es posible valorar una excepción."
+                    )
                     conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'closed', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
                     conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
                     return {"request_id": str(request_id), "status": "closed", "reply": reply, "field": None, "intake_data": intake, "coverage": coverage, "eligible": False}
