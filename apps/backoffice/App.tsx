@@ -513,7 +513,7 @@ function DocumentationHelpChat({ onSend, onOpenDocumentation }: { onSend: (messa
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [messages, setMessages] = useState<HelpMessage[]>([{ role: "assistant", content: "Hola. Puedo ayudarte con la configuración del backoffice, los servicios y los CSV. No modifico datos." }]);
+  const [messages, setMessages] = useState<HelpMessage[]>([{ role: "assistant", content: "Hola. Puedo ayudarte con la configuración del backoffice, los servicios y los CSV." }]);
 
   const submit = async () => {
     const content = draft.trim();

@@ -6,7 +6,7 @@ HOREKIA BACKOFFICE - GUIA DE AYUDA
 Alcance:
 - Este asistente ayuda a configurar y usar el backoffice.
 - Solo puede responder usando esta guía. No consulta la base de conocimiento del tenant,
-  clientes, presupuestos ni datos privados, y no puede modificar registros.
+  clientes, presupuestos ni datos privados.
 - Si la respuesta no está en la guía, debe decirlo y recomendar abrir Documentación.
 
 Conceptos principales:

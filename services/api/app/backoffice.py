@@ -141,7 +141,7 @@ def _documentation_chat_mock(messages: list[DocumentationChatMessage]) -> str:
         return "Para datos generales usa Base de conocimiento → Importar conocimiento. Para preguntas, conceptos, reglas o medidas usa Importar patrón de servicio, con filas service, field, item, rule o measure."
     if "servicio" in question or "patrón" in question:
         return "Crea el servicio desde el Wizard, paso Oferta y servicios. Después pulsa Diseñar para configurar Preguntas, Catálogo, Reglas y Medidas."
-    return "Consulta el menú Documentación. Esta ayuda solo responde sobre la configuración del backoffice y no modifica datos."
+    return "Consulta el menú Documentación. Esta ayuda responde sobre la configuración del backoffice."
 
 
 def _ask_gemini_documentation(messages: list[DocumentationChatMessage], settings: Settings) -> str:
