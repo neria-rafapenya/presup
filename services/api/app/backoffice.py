@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
+from .calculator import CalculationError, calculate_quote
 from .db import POC_TENANT_ID, db_session
 from .documentation import BACKOFFICE_HELP_CONTEXT
 
@@ -128,6 +129,10 @@ class DocumentationChatMessage(BaseModel):
 
 class DocumentationChatRequest(BaseModel):
     messages: list[DocumentationChatMessage] = Field(min_length=1, max_length=12)
+
+
+class StatusPatch(BaseModel):
+    status: str = Field(min_length=1, max_length=32)
 
 
 def database_error(exc: Exception) -> HTTPException:
@@ -775,4 +780,267 @@ def import_knowledge(payload: KnowledgeImport, settings: Settings = Depends(get_
     except Exception as exc:
         if "horekia_knowledge_entries" in str(exc):
             raise HTTPException(status_code=503, detail="Falta aplicar la migración de conocimiento") from exc
+        raise database_error(exc) from exc
+
+
+def _operations_blueprint(conn: Any, job_type_id: UUID) -> dict[str, Any]:
+    schema = conn.execute(
+        """
+        select fields from public.horekia_intake_schemas
+        where tenant_id = %s and job_type_id = %s and status = 'active'
+        order by version desc limit 1
+        """,
+        (POC_TENANT_ID, job_type_id),
+    ).fetchone()
+    items = conn.execute(
+        """
+        select sku, name, description, unit, base_price, currency, metadata
+        from public.horekia_items
+        where tenant_id = %s and job_type_id = %s and status = 'active'
+        order by name
+        """,
+        (POC_TENANT_ID, job_type_id),
+    ).fetchall()
+    rules = conn.execute(
+        """
+        select code, kind, priority, definition
+        from public.horekia_price_rules
+        where tenant_id = %s and job_type_id = %s and status = 'active'
+        order by priority, code
+        """,
+        (POC_TENANT_ID, job_type_id),
+    ).fetchall()
+    measures = conn.execute(
+        """
+        select code, expression from public.horekia_computed_measures
+        where tenant_id = %s and job_type_id = %s order by code
+        """,
+        (POC_TENANT_ID, job_type_id),
+    ).fetchall()
+    return {"fields": schema["fields"] if schema else [], "items": items, "rules": rules, "measures": measures}
+
+
+def _create_operations_quote(conn: Any, request: dict[str, Any], blueprint: dict[str, Any], tenant_settings: dict[str, Any]) -> dict[str, Any]:
+    calculation = calculate_quote(
+        fields=blueprint["fields"],
+        items=blueprint["items"],
+        rules=blueprint["rules"],
+        measures=blueprint["measures"],
+        intake=dict(request["intake_data"] or {}),
+        tax_rate=tenant_settings["tax_rate"],
+        currency=tenant_settings["currency"],
+    )
+    existing = conn.execute(
+        """
+        select id, status, currency, subtotal, tax_amount, total
+        from public.horekia_quotes
+        where tenant_id = %s and request_id = %s and status not in ('rejected', 'expired')
+        order by created_at desc limit 1
+        """,
+        (POC_TENANT_ID, request["id"]),
+    ).fetchone()
+    if existing:
+        return {**existing, "calculation": calculation}
+
+    quote = conn.execute(
+        """
+        insert into public.horekia_quotes
+          (tenant_id, request_id, status, currency, subtotal, tax_amount, total,
+           configuration_version, configuration_snapshot, calculation_snapshot)
+        values (%s, %s, 'needs_review', %s, %s, %s, %s, %s, %s, %s)
+        returning id, status, currency, subtotal, tax_amount, total
+        """,
+        (
+            POC_TENANT_ID,
+            request["id"],
+            tenant_settings["currency"],
+            calculation["subtotal"],
+            calculation["tax_amount"],
+            calculation["total"],
+            tenant_settings["configuration_version"],
+            Jsonb(blueprint),
+            Jsonb(calculation),
+        ),
+    ).fetchone()
+    for line in calculation["lines"]:
+        item_id = None
+        if line.get("sku"):
+            item = conn.execute(
+                "select id from public.horekia_items where tenant_id = %s and sku = %s",
+                (POC_TENANT_ID, line["sku"]),
+            ).fetchone()
+            item_id = item["id"] if item else None
+        conn.execute(
+            """
+            insert into public.horekia_quote_lines
+              (tenant_id, quote_id, item_id, description, quantity, unit_price, amount, calculation_trace)
+            values (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                POC_TENANT_ID,
+                quote["id"],
+                item_id,
+                line["description"],
+                line["quantity"],
+                line["unit_price"],
+                line["amount"],
+                Jsonb(line["trace"]),
+            ),
+        )
+    conn.execute(
+        "insert into public.horekia_quote_events (tenant_id, quote_id, event_type, payload) values (%s, %s, 'created', %s)",
+        (POC_TENANT_ID, quote["id"], Jsonb({"source": "backoffice"})),
+    )
+    return {**quote, "calculation": calculation}
+
+
+@router.get("/requests")
+def list_requests(settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            return conn.execute(
+                """
+                select r.id, r.status, r.source, r.intake_data, r.missing_fields,
+                       r.created_at, r.updated_at, j.slug as job_type_slug, j.name as job_type_name,
+                       c.name as customer_name, c.email as customer_email, c.phone as customer_phone,
+                       q.id as quote_id, q.status as quote_status, q.total as quote_total, q.currency as quote_currency
+                from public.horekia_requests r
+                left join public.horekia_job_types j on j.tenant_id = r.tenant_id and j.id = r.job_type_id
+                left join public.horekia_customers c on c.tenant_id = r.tenant_id and c.id = r.customer_id
+                left join lateral (
+                  select id, status, total, currency from public.horekia_quotes
+                  where tenant_id = r.tenant_id and request_id = r.id
+                  order by created_at desc limit 1
+                ) q on true
+                where r.tenant_id = %s order by r.created_at desc limit 200
+                """,
+                (POC_TENANT_ID,),
+            ).fetchall()
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.get("/requests/{request_id}")
+def get_request(request_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            request = conn.execute(
+                """
+                select r.*, j.slug as job_type_slug, j.name as job_type_name,
+                       c.name as customer_name, c.email as customer_email, c.phone as customer_phone
+                from public.horekia_requests r
+                left join public.horekia_job_types j on j.tenant_id = r.tenant_id and j.id = r.job_type_id
+                left join public.horekia_customers c on c.tenant_id = r.tenant_id and c.id = r.customer_id
+                where r.tenant_id = %s and r.id = %s
+                """,
+                (POC_TENANT_ID, request_id),
+            ).fetchone()
+            if not request:
+                raise HTTPException(status_code=404, detail="Petición no encontrada")
+            messages = conn.execute(
+                "select id, sender, body, structured_data, provenance, created_at from public.horekia_messages where tenant_id = %s and request_id = %s order by created_at",
+                (POC_TENANT_ID, request_id),
+            ).fetchall()
+            quote = conn.execute(
+                "select id, status, currency, subtotal, tax_amount, total, valid_until, created_at, updated_at from public.horekia_quotes where tenant_id = %s and request_id = %s order by created_at desc limit 1",
+                (POC_TENANT_ID, request_id),
+            ).fetchone()
+            return {"request": request, "messages": messages, "quote": quote}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.patch("/requests/{request_id}/status")
+def update_request_status(request_id: UUID, payload: StatusPatch, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    allowed = {"new", "in_progress", "needs_review", "quoted", "closed"}
+    if payload.status not in allowed:
+        raise HTTPException(status_code=422, detail="Estado de petición no válido")
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                "update public.horekia_requests set status = %s, updated_at = now() where tenant_id = %s and id = %s returning id, status, updated_at",
+                (payload.status, POC_TENANT_ID, request_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Petición no encontrada")
+            return row
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.post("/requests/{request_id}/calculate")
+def calculate_request_quote(request_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            request = conn.execute(
+                "select id, job_type_id, intake_data from public.horekia_requests where tenant_id = %s and id = %s",
+                (POC_TENANT_ID, request_id),
+            ).fetchone()
+            if not request:
+                raise HTTPException(status_code=404, detail="Petición no encontrada")
+            if not request["job_type_id"]:
+                raise HTTPException(status_code=422, detail="La petición no tiene servicio asociado")
+            blueprint = _operations_blueprint(conn, request["job_type_id"])
+            tenant_settings = conn.execute(
+                "select currency, tax_rate, configuration_version from public.horekia_tenant_settings where tenant_id = %s",
+                (POC_TENANT_ID,),
+            ).fetchone()
+            try:
+                quote = _create_operations_quote(conn, request, blueprint, tenant_settings)
+            except CalculationError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            conn.execute("update public.horekia_requests set status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (POC_TENANT_ID, request_id))
+            return quote
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.get("/quotes")
+def list_quotes(settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            return conn.execute(
+                """
+                select q.id, q.request_id, q.status, q.currency, q.subtotal, q.tax_amount, q.total,
+                       q.valid_until, q.created_at, q.updated_at, j.name as job_type_name,
+                       c.name as customer_name
+                from public.horekia_quotes q
+                left join public.horekia_requests r on r.tenant_id = q.tenant_id and r.id = q.request_id
+                left join public.horekia_job_types j on j.tenant_id = r.tenant_id and j.id = r.job_type_id
+                left join public.horekia_customers c on c.tenant_id = r.tenant_id and c.id = r.customer_id
+                where q.tenant_id = %s order by q.created_at desc limit 200
+                """,
+                (POC_TENANT_ID,),
+            ).fetchall()
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.patch("/quotes/{quote_id}/status")
+def update_quote_status(quote_id: UUID, payload: StatusPatch, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    allowed = {"draft", "needs_review", "approved", "sent", "accepted", "rejected", "expired"}
+    if payload.status not in allowed:
+        raise HTTPException(status_code=422, detail="Estado de presupuesto no válido")
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                "update public.horekia_quotes set status = %s, updated_at = now() where tenant_id = %s and id = %s returning id, status, updated_at",
+                (payload.status, POC_TENANT_ID, quote_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+            conn.execute(
+                "insert into public.horekia_quote_events (tenant_id, quote_id, event_type, payload) values (%s, %s, %s, %s)",
+                (POC_TENANT_ID, quote_id, "approved" if payload.status == "approved" else "updated", Jsonb({"status": payload.status, "source": "backoffice"})),
+            )
+            return row
+    except HTTPException:
+        raise
+    except Exception as exc:
         raise database_error(exc) from exc

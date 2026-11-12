@@ -34,6 +34,8 @@ type KnowledgeRow = { kind: string; title: string; content: string; code?: strin
 type KnowledgeSummary = { total: number; by_kind: { kind: string; count: number }[] };
 type KnowledgeEntry = { id: string; kind: string; title: string; content?: string | null; source_name?: string | null };
 type HelpMessage = { role: "user" | "assistant"; content: string };
+type RequestSummary = { id: string; status: string; source: string; intake_data: Record<string, unknown>; missing_fields: string[]; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null; customer_email?: string | null; quote_id?: string | null; quote_status?: string | null; quote_total?: number | string | null; quote_currency?: string | null };
+type QuoteSummary = { id: string; request_id?: string | null; status: string; currency: string; subtotal: number | string; tax_amount: number | string; total: number | string; valid_until?: string | null; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null };
 type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
@@ -158,6 +160,8 @@ export default function App() {
   const [wizardResumeStep, setWizardResumeStep] = useState(0);
   const [knowledgeSummary, setKnowledgeSummary] = useState<KnowledgeSummary>({ total: 0, by_kind: [] });
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
+  const [requests, setRequests] = useState<RequestSummary[]>([]);
+  const [quotes, setQuotes] = useState<QuoteSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,11 +170,13 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextServices, nextKnowledgeSummary, nextKnowledgeEntries] = await Promise.all([
+      const [nextSummary, nextServices, nextKnowledgeSummary, nextKnowledgeEntries, nextRequests, nextQuotes] = await Promise.all([
         api<Summary>("/api/v1/backoffice/summary"),
         api<JobType[]>("/api/v1/backoffice/job-types"),
         api<KnowledgeSummary>("/api/v1/backoffice/knowledge/summary"),
         api<KnowledgeEntry[]>("/api/v1/backoffice/knowledge/entries"),
+        api<RequestSummary[]>("/api/v1/backoffice/requests"),
+        api<QuoteSummary[]>("/api/v1/backoffice/quotes"),
       ]);
       const nextProfile = await api<TenantProfile>("/api/v1/backoffice/profile");
       setSummary(nextSummary);
@@ -178,6 +184,8 @@ export default function App() {
       setServices(nextServices);
       setKnowledgeSummary(nextKnowledgeSummary);
       setKnowledgeEntries(nextKnowledgeEntries);
+      setRequests(nextRequests);
+      setQuotes(nextQuotes);
     } catch {
       setError("No se ha podido conectar con la API de Horekia.");
     } finally {
@@ -352,6 +360,45 @@ export default function App() {
     }
   };
 
+  const calculateRequestQuote = async (requestId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/api/v1/backoffice/requests/${requestId}/calculate`, { method: "POST" });
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido calcular el presupuesto. Revisa que la petición esté completa y que el patrón tenga reglas válidas.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateRequestStatus = async (requestId: string, status: string) => {
+    setSaving(true);
+    try {
+      await api(`/api/v1/backoffice/requests/${requestId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      await load();
+    } catch {
+      setError("No se ha podido actualizar el estado de la petición.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateQuoteStatus = async (quoteId: string, status: string) => {
+    setSaving(true);
+    try {
+      await api(`/api/v1/backoffice/quotes/${quoteId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      await load();
+    } catch {
+      setError("No se ha podido actualizar el estado del presupuesto.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const askDocumentation = async (messages: HelpMessage[]) => {
     const response = await api<{ reply: string }>("/api/v1/backoffice/documentation/chat", {
       method: "POST",
@@ -494,8 +541,8 @@ export default function App() {
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
               {screen === "documentation" ? <Documentation /> : null}
-              {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
-              {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
+              {screen === "requests" ? <RequestsPage requests={requests} onCalculate={calculateRequestQuote} onStatus={updateRequestStatus} saving={saving} /> : null}
+              {screen === "quotes" ? <QuotesPage quotes={quotes} onStatus={updateQuoteStatus} saving={saving} /> : null}
             </>
           ) : null}
         </ScrollView>
@@ -1688,8 +1735,44 @@ function Toggle({ label, hint, value, onPress }: { label: string; hint?: string;
   return <Pressable style={styles.toggle} onPress={onPress}><View style={[styles.checkbox, value && styles.checkboxOn]}>{value ? <Text style={styles.check}>✓</Text> : null}</View><View><InfoLabel label={label} hint={hint} /></View></Pressable>;
 }
 
-function ModulePlaceholder({ title, text }: { title: string; text: string }) {
-  return <View style={styles.empty}><Text style={styles.emptyTitle}>{title}</Text><Text style={styles.emptyText}>{text}</Text></View>;
+function statusLabel(value: string) {
+  return ({ new: "Nueva", in_progress: "En curso", needs_review: "Revisión", quoted: "Presupuestada", closed: "Cerrada", draft: "Borrador", approved: "Aprobado", sent: "Enviada", accepted: "Aceptado", rejected: "Rechazado", expired: "Caducado" } as Record<string, string>)[value] ?? value;
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+}
+
+function formatMoney(value: number | string | null | undefined, currency = "EUR") {
+  if (value === null || value === undefined) return "—";
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toLocaleString("es-ES", { style: "currency", currency }) : "—";
+}
+
+function StatusBadge({ value }: { value: string }) {
+  return <View style={[styles.statusBadge, value === "needs_review" && styles.statusBadgeWarning, value === "approved" && styles.statusBadgeSuccess]}><Text style={styles.statusBadgeText}>{statusLabel(value)}</Text></View>;
+}
+
+function RequestsPage({ requests, onCalculate, onStatus, saving }: { requests: RequestSummary[]; onCalculate: (id: string) => Promise<boolean>; onStatus: (id: string, status: string) => Promise<void>; saving: boolean }) {
+  return <View style={styles.operationsPage}>
+    <View style={styles.operationsIntro}><Text style={styles.sectionTitle}>Bandeja de peticiones</Text><Text style={styles.sectionText}>Aquí llegan las solicitudes del chatbot público. La ayuda del backoffice es independiente y no aparece en esta conversación.</Text></View>
+    {requests.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>Todavía no hay peticiones</Text><Text style={styles.emptyText}>Cuando un cliente use la aplicación de chat, sus solicitudes aparecerán aquí.</Text></View> : requests.map((request) => <View key={request.id} style={styles.operationRow}>
+      <View style={styles.operationMain}><Text style={styles.operationTitle}>{request.job_type_name ?? "Servicio sin nombre"}</Text><Text style={styles.operationMeta}>{request.customer_name || request.customer_email || "Cliente sin datos"} · {formatDate(request.created_at)}</Text><Text style={styles.operationMeta}>{request.missing_fields?.length ? `Faltan: ${request.missing_fields.join(", ")}` : "Datos completos"}</Text></View>
+      <StatusBadge value={request.status} />
+      <View style={styles.operationActions}><Pressable style={styles.secondaryButton} onPress={() => void onCalculate(request.id)} disabled={saving}><Text style={styles.secondaryLabel}>{saving ? "Calculando…" : request.quote_id ? "Recalcular" : "Calcular presupuesto"}</Text></Pressable><Pressable style={styles.textAction} onPress={() => void onStatus(request.id, request.status === "closed" ? "in_progress" : "closed")}><Text style={styles.textActionLabel}>{request.status === "closed" ? "Reabrir" : "Cerrar"}</Text></Pressable></View>
+    </View>)}
+  </View>;
+}
+
+function QuotesPage({ quotes, onStatus, saving }: { quotes: QuoteSummary[]; onStatus: (id: string, status: string) => Promise<void>; saving: boolean }) {
+  return <View style={styles.operationsPage}>
+    <View style={styles.operationsIntro}><Text style={styles.sectionTitle}>Revisión de presupuestos</Text><Text style={styles.sectionText}>Los importes son calculados por el motor determinista. En esta POC quedan pendientes de revisión humana antes de enviarse al cliente.</Text></View>
+    {quotes.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>Todavía no hay presupuestos</Text><Text style={styles.emptyText}>Calcula un presupuesto desde una petición completa.</Text></View> : quotes.map((quote) => <View key={quote.id} style={styles.operationRow}>
+      <View style={styles.operationMain}><Text style={styles.operationTitle}>{quote.job_type_name ?? "Servicio sin nombre"}</Text><Text style={styles.operationMeta}>{quote.customer_name || "Cliente sin datos"} · {formatDate(quote.created_at)}</Text><Text style={styles.quoteTotal}>{formatMoney(quote.total, quote.currency)}</Text><Text style={styles.operationMeta}>Base {formatMoney(quote.subtotal, quote.currency)} · IVA {formatMoney(quote.tax_amount, quote.currency)}</Text></View>
+      <StatusBadge value={quote.status} />
+      <View style={styles.operationActions}>{quote.status === "needs_review" ? <Pressable style={styles.primaryButton} onPress={() => void onStatus(quote.id, "approved")} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Aprobar"}</Text></Pressable> : null}{quote.status === "approved" ? <Pressable style={styles.secondaryButton} onPress={() => void onStatus(quote.id, "sent")} disabled={saving}><Text style={styles.secondaryLabel}>Marcar enviada</Text></Pressable> : null}</View>
+    </View>)}
+  </View>;
 }
 
 function screenTitle(screen: Screen) {
@@ -1928,6 +2011,22 @@ const styles = StyleSheet.create({
   listTitle: { color: "#17332d", fontSize: 15, fontWeight: "700" },
   listMeta: { color: "#718078", fontSize: 12, marginTop: 4 },
   listArrow: { color: "#258269", fontSize: 28 },
+  operationsPage: { gap: 12 },
+  operationsIntro: { backgroundColor: "#ffffff", borderRadius: 14, borderWidth: 1, borderColor: "#e1e8e3", padding: 22, marginBottom: 4 },
+  sectionTitle: { color: "#17332d", fontSize: 19, fontWeight: "800" },
+  sectionText: { color: "#61736a", fontSize: 14, lineHeight: 21, marginTop: 7 },
+  operationRow: { backgroundColor: "#ffffff", borderRadius: 12, borderWidth: 1, borderColor: "#e1e8e3", padding: 18, flexDirection: "row", alignItems: "center", gap: 16 },
+  operationMain: { flex: 1, minWidth: 260 },
+  operationTitle: { color: "#17332d", fontSize: 16, fontWeight: "800" },
+  operationMeta: { color: "#718078", fontSize: 12, lineHeight: 18, marginTop: 4 },
+  operationActions: { alignItems: "flex-end", minWidth: 150 },
+  statusBadge: { backgroundColor: "#eef3ef", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
+  statusBadgeWarning: { backgroundColor: "#fff3d9" },
+  statusBadgeSuccess: { backgroundColor: "#dcefe4" },
+  statusBadgeText: { color: "#285246", fontSize: 12, fontWeight: "800" },
+  quoteTotal: { color: "#258269", fontSize: 18, fontWeight: "800", marginTop: 8 },
+  textAction: { paddingHorizontal: 8, paddingVertical: 8, marginTop: 5 },
+  textActionLabel: { color: "#a53d35", fontSize: 12, fontWeight: "700" },
   empty: { backgroundColor: "#ffffff", borderRadius: 14, borderWidth: 1, borderColor: "#e1e8e3", padding: 34 },
   emptyTitle: { color: "#17332d", fontSize: 20, fontWeight: "800" },
   emptyText: { color: "#61736a", fontSize: 15, lineHeight: 23, marginTop: 10 },

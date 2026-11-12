@@ -6,7 +6,7 @@ Aplicación generalista de presupuestos, entregada llave en mano. La empresa con
 
 ## Estado
 
-Fase 1: base POC validada sobre `fase-1/base`; el desarrollo activo se concentra en el backoffice. Fase 0 quedó registrada en `fase-0/preparacion`, commit `37b1150`. La base Supabase real contiene únicamente tablas `horekia_*` con datos ficticios; no se usa Supabase Auth. El detalle está en [fase-1.md](docs/fase-1.md).
+Fase 1: base POC y circuito inicial de operación implementados sobre `fase-1/base`; incluye backoffice, API pública de conversación y app de chat separada. Fase 0 quedó registrada en `fase-0/preparacion`, commit `37b1150`. La base Supabase real contiene únicamente tablas `horekia_*` con datos ficticios; no se usa Supabase Auth. El detalle está en [fase-1.md](docs/fase-1.md).
 
 Repositorio objetivo: https://github.com/neria-rafapenya/presup.git
 
@@ -27,11 +27,11 @@ La sesión actual puede escribir en `.git` para las operaciones locales necesari
 
 Se necesitan Git, una versión compatible de Python y Node, yarn y Supabase CLI. Docker Compose se conserva para la entrega llave en mano y la validación en CI o en un entorno controlado; no se usa Docker/Supabase local en este macOS para evitar sobrecargarlo. Las versiones objetivo se fijan en Fase 1.
 
-No copiar credenciales de otros proyectos. El `.env` local ya existe; en una copia nueva se puede crear desde `.env.example` y completar las credenciales del proyecto. Mantener `.env` sin seguimiento de Git. Gemini está configurado para uso real; el backoffice actual no lo invoca todavía. Nunca exponer `DATABASE_URL` mediante variables `EXPO_PUBLIC_`.
+No copiar credenciales de otros proyectos. El `.env` local ya existe; en una copia nueva se puede crear desde `.env.example` y completar las credenciales del proyecto. Mantener `.env` sin seguimiento de Git. Gemini está configurado para uso real y alimenta el asistente interno de documentación. El chatbot público y el cálculo siguen un flujo guiado determinista; nunca exponer `DATABASE_URL` mediante variables `EXPO_PUBLIC_`.
 
 ## Verificación actual
 
-La API y el backoffice se validan sin Docker; las migraciones y el aislamiento ya se probaron en el proyecto Supabase autorizado usando únicamente el prefijo `horekia_`. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable.
+La API, el backoffice y el chat se validan sin Docker; las migraciones y el aislamiento ya se probaron en el proyecto Supabase autorizado usando únicamente el prefijo `horekia_`. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable.
 
 El backoffice tendrá un Wizard de onboarding por tenant: aparecerá automáticamente en el primer acceso mientras falte la configuración inicial y seguirá disponible desde el menú `Wizard` para reanudarlo o ejecutarlo de nuevo.
 

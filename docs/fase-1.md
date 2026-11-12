@@ -2,7 +2,7 @@
 
 ## Implementado en `fase-1/base`
 
-- Monorepo Yarn 4 con apps separadas `backoffice` y `chat`, y paquete compartido. El trabajo activo se concentra ahora en `backoffice`.
+- Monorepo Yarn 4 con apps separadas `backoffice` y `chat`, y paquete compartido. El backoffice opera la configuración y revisión; `chat` es la interfaz pública separada.
 - API FastAPI con `/healthz`, `/readyz` y validación segura de configuración.
 - Contratos JSON Schema para fichas, reglas de precio y presupuestos.
 - Migraciones Supabase ordenadas por dependencias para el modelo mínimo de Fase 1.
@@ -54,6 +54,9 @@ Fase 1 queda cerrada para el alcance de esta POC:
 - 26 tablas Horekia creadas; no se modificaron tablas de negocio existentes.
 - Dos identidades de aplicación asociadas a tenants distintos.
 - Lecturas propias permitidas, lecturas cruzadas denegadas y escrituras cruzadas denegadas por RLS.
-- API y backoffice Web arrancados y verificados por HTTP; chat queda fuera del foco de desarrollo actual.
+- API, backoffice Web y chat Web arrancados y verificados por HTTP.
+- Flujo público probado contra Supabase: selección de servicio, conversación, captura de campos, petición y presupuesto `needs_review`.
+- Flujo interno probado: bandeja de peticiones, detalle con mensajes, revisión y cambio de estado de presupuesto.
+- El asistente flotante de documentación sigue siendo un módulo independiente del chatbot público; usa el contexto controlado de documentación y Gemini.
 
-Fuera del backoffice actual quedan Supabase Auth, Storage compartido, flujos de chat y el despliegue. Gemini está configurado para uso real, pero todavía no es invocado por estas pantallas.
+Fuera de esta POC quedan Supabase Auth, Storage compartido, subida de adjuntos desde el chat, envío de PDF/correo y despliegue. El chat público actual es un flujo guiado por la ficha y el motor determinista; la interpretación libre con Gemini para conversaciones públicas queda como siguiente incremento. La prueba usa datos ficticios y no debe considerarse una tarifa real.
