@@ -5,7 +5,7 @@
    aria-labelledby="title desc"
    version="1.1"
    id="svg1"
-   sodipodi:docname="horekia-logo-backoffice.svg"
+   sodipodi:docname="horekia-logo-app-new.svg"
    width="1200"
    height="220"
    inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
@@ -41,37 +41,37 @@
   <desc
      id="desc">Anagrama H y marca HorekIA</desc>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="252.07407"
      y="187.77844"
      id="text8">H</text>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="401.27744"
      y="187.77844"
      id="text7">O</text>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="568.00458"
      y="187.77844"
      id="text6">R</text>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="696.86426"
      y="187.77844"
      id="text5">E</text>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="814.44421"
      y="187.77844"
      id="text4">K</text>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="952.97223"
      y="187.77844"
      id="text3">I</text>
   <text
-     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#17332d;stroke-width:2.34213"
+     style="font-weight:bold;font-size:201.424px;font-family:'Avenir Next';-inkscape-font-specification:'Avenir Next, Bold';letter-spacing:-4.68428px;word-spacing:0.0234213px;fill:#800000;stroke-width:2.34213"
      x="1012.3408"
      y="187.77844"
      id="text2">A</text>
@@ -83,12 +83,12 @@
      id="rect1-2"
      x="19.173079"
      y="20.192308"
-     style="stroke-width:0.357535" />
+     style="stroke-width:0.357535;fill:#000000;fill-opacity:1" />
   <path
      fill="#ffffff"
      d="M 73.571355,67.781483 H 99.313843 V 173.61171 H 73.571355 Z m 65.786345,0 h 25.74249 V 173.61171 H 139.3577 Z M 93.593285,107.82536 h 51.484975 v 25.74249 H 93.593285 Z"
      id="path1-4-9"
-     style="fill:#28220b;stroke-width:0.357535" />
+     style="fill:#4d4d4d;stroke-width:0.357535" />
   <metadata
      id="metadata8">
     <rdf:RDF>
