@@ -454,7 +454,7 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
         if not tenant:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
         return conn.execute(
-            "select slug, name, description from public.horekia_job_types where tenant_id = %s and status = 'active' order by name",
+            "select slug, name, description, created_at from public.horekia_job_types where tenant_id = %s and status = 'active' order by created_at desc, name",
             (tenant["id"],),
         ).fetchall()
 
