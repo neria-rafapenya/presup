@@ -32,7 +32,7 @@ type JobType = { id: string; slug: string; name: string; description?: string | 
 type NewService = { slug: string; name: string; description: string };
 type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
 type KnowledgeSummary = { total: number; by_kind: { kind: string; count: number }[] };
-type KnowledgeEntry = { id: string; kind: string; title: string; source_name?: string | null };
+type KnowledgeEntry = { id: string; kind: string; title: string; content?: string | null; source_name?: string | null };
 type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
@@ -501,8 +501,9 @@ type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntri
 
 function KnowledgePage({ knowledgeSummary, knowledgeEntries, onImport, saving, embedded = false }: KnowledgeImportProps & { embedded?: boolean }) {
   const content = <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImport} saving={saving} />;
-  if (embedded) return <View><Text style={styles.panelTitle}>3. Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View>;
-  return <View><View style={styles.panel}><Text style={styles.panelTitle}>Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View></View>;
+  const table = <KnowledgeTable entries={knowledgeEntries} />;
+  if (embedded) return <View><Text style={styles.panelTitle}>3. Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}{table}</View>;
+  return <View><View style={styles.panel}><Text style={styles.panelTitle}>Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View>{table}</View>;
 }
 
 function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: KnowledgeImportProps) {
@@ -538,6 +539,31 @@ function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving 
       <Text style={styles.knowledgeCount}>Base actual: {knowledgeSummary.total} entradas · {knowledgeEntries.slice(0, 3).map((entry) => entry.title).join(", ") || "sin entradas"}</Text>
     </View>
   );
+}
+
+function KnowledgeTable({ entries }: { entries: KnowledgeEntry[] }) {
+  const [filter, setFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 15;
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  const filteredEntries = entries.filter((entry) => !normalizedFilter || `${entry.title} ${entry.kind} ${entry.source_name ?? ""} ${entry.content ?? ""}`.toLocaleLowerCase().includes(normalizedFilter));
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
+  const visibleEntries = filteredEntries.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => setPage(1), [filter]);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  return <View style={styles.panel}>
+    <Text style={styles.panelTitle}>Entradas importadas</Text>
+    <TextInput style={styles.filterInput} value={filter} onChangeText={setFilter} placeholder="Filtrar por título, tipo, contenido o archivo…" />
+    {filteredEntries.length ? <>
+      <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Entrada</Text><Text style={styles.tableHeaderLabel}>Tipo y origen</Text></View>
+      {visibleEntries.map((entry) => <View style={styles.knowledgeTableRow} key={entry.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{entry.title}</Text>{entry.content ? <Text style={styles.knowledgeExcerpt} numberOfLines={2}>{entry.content}</Text> : null}</View><View style={styles.knowledgeMeta}><Text style={styles.knowledgeKind}>{entry.kind}</Text><Text style={styles.listMeta}>{entry.source_name || "Sin origen"}</Text></View></View>)}
+      <View style={styles.pagination}><Text style={styles.listMeta}>{filteredEntries.length} entrada(s){totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View>
+    </> : <Text style={styles.emptyText}>{filter ? "No hay entradas que coincidan con el filtro." : "Todavía no hay entradas importadas."}</Text>}
+  </View>;
 }
 
 function TenantProfileForm({ profile, setProfile, onSave, onUploadTemplate, saving, fallbackName }: { profile: TenantProfile; setProfile: (profile: TenantProfile) => void; onSave: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; saving: boolean; fallbackName: string }) {
@@ -1442,7 +1468,11 @@ const styles = StyleSheet.create({
   tableHeader: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#dbe6df", paddingHorizontal: 2, paddingVertical: 8 },
   tableHeaderLabel: { color: "#61736a", fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.4 },
   tableRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingVertical: 12, gap: 12 },
+  knowledgeTableRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingVertical: 12, gap: 18 },
   tableMain: { flex: 1, minWidth: 0 },
+  knowledgeMeta: { width: 180 },
+  knowledgeKind: { color: "#285246", fontSize: 12, fontWeight: "800" },
+  knowledgeExcerpt: { color: "#61736a", fontSize: 12, lineHeight: 17, marginTop: 5 },
   pagination: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14 },
   paginationActions: { flexDirection: "row", gap: 8 },
   paginationButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7 },
