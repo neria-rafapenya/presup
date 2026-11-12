@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "designer" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "documentation" | "designer" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -121,6 +121,7 @@ function routeFromPath(pathname: string): AppRoute | null {
   if (path === "/company") return { screen: "company" };
   if (path === "/services") return { screen: "wizard" };
   if (path === "/knowledge") return { screen: "knowledge" };
+  if (path === "/documentation") return { screen: "documentation" };
   if (path === "/designer") return { screen: "designer" };
   if (path === "/requests") return { screen: "requests" };
   if (path === "/quotes") return { screen: "quotes" };
@@ -375,6 +376,7 @@ export default function App() {
             <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("wizard"); navigate("designer", designerService?.id ?? undefined); }} />
             <NavButton label="Base de conocimiento" child active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           </View>
+          <NavButton label="Documentación" active={screen === "documentation"} onPress={() => navigate("documentation")} />
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
         </View>
@@ -415,6 +417,7 @@ export default function App() {
               {screen === "knowledge" ? (
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={importKnowledge} saving={saving} />
               ) : null}
+              {screen === "documentation" ? <Documentation /> : null}
               {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
               {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
             </>
@@ -495,6 +498,96 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
       </View>
     </View>
   );
+}
+
+function Documentation() {
+  const index = [
+    "Objetivo de la base de conocimiento",
+    "Qué información debe cargarse",
+    "Qué se configura en el Diseñador",
+    "Formato CSV admitido",
+    "Ejemplo de producto",
+    "Ejemplo de documentación y políticas",
+    "Cómo redactar entradas útiles",
+    "Proceso recomendado de carga y validación",
+  ];
+  return <View>
+    <View style={styles.panel}>
+      <Text style={styles.panelTitle}>Documentación para nutrir la base de conocimiento</Text>
+      <Text style={styles.wizardText}>Guía para la persona técnica o responsable de configuración que prepara los datos de un tenant. La base aporta contexto a Gemini, mientras que los precios y cálculos que afectan al importe deben permanecer en el Diseñador de servicios.</Text>
+      <Text style={styles.sectionLabel}>Índice</Text>
+      {index.map((title, indexNumber) => <Text key={title} style={styles.documentationIndex}>{indexNumber + 1}. {title}</Text>)}
+    </View>
+
+    <DocumentationSection number="1" title="Objetivo de la base de conocimiento">
+      <Text style={styles.documentationText}>Debe contener información estable y reutilizable del negocio: qué vende, cómo lo vende, qué condiciones aplica y qué respuestas habituales necesita conocer la IA.</Text>
+      <Text style={styles.documentationCallout}>Regla práctica: si el dato debe cambiar el importe, configúralo como catálogo o regla determinista. Si ayuda a entender o explicar la petición, puede ir en la base de conocimiento.</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="2" title="Qué información debe cargarse">
+      <DocumentationBullet title="Productos y materiales" text="Baldosas, sanitarios, griferías, pinturas, piezas, servicios de mano de obra o extras. Los productos pueden incluir unidad y precio base." />
+      <DocumentationBullet title="Categorías" text="Agrupaciones como Material de suelo, Sanitarios, Mano de obra o Extras." />
+      <DocumentationBullet title="Patrones comerciales" text="Cómo suele venderse un servicio, qué preguntas conviene hacer y en qué orden pedir la información." />
+      <DocumentationBullet title="Políticas" text="Garantías, pagos, plazos, desplazamientos, validez de presupuestos y condiciones de aceptación." />
+      <DocumentationBullet title="Preguntas frecuentes" text="Respuestas breves a dudas habituales de clientes." />
+      <DocumentationBullet title="Documentación" text="Criterios internos, alcance del servicio, materiales recomendados y límites de lo que ofrece la empresa." />
+    </DocumentationSection>
+
+    <DocumentationSection number="3" title="Qué se configura en el Diseñador">
+      <Text style={styles.documentationText}>La base de conocimiento no sustituye al patrón de un servicio. En el Diseñador deben configurarse:</Text>
+      <DocumentationBullet title="Preguntas y variables" text="Lo que el chatbot debe preguntar al cliente, por ejemplo superficie, tipo de reforma o color." />
+      <DocumentationBullet title="Catálogo y conceptos facturables" text="Los productos, materiales y trabajos que se pueden añadir al presupuesto." />
+      <DocumentationBullet title="Reglas deterministas" text="Fórmulas, mínimos, recargos y descuentos que calculan el importe." />
+      <Text style={styles.documentationCallout}>Un sales_pattern en el CSV sirve como guía contextual para Gemini. No crea automáticamente preguntas, productos ni reglas dentro de un servicio.</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="4" title="Formato CSV admitido">
+      <Text style={styles.documentationText}>La pantalla Base de conocimiento acepta CSV con estas columnas:</Text>
+      <Text style={styles.codeBlock}>kind,title,content,code,category,unit,base_price,currency</Text>
+      <Text style={styles.documentationText}>Valores admitidos para kind: product, category, sales_pattern, policy, faq, document y other. Las columnas adicionales se conservan como metadatos.</Text>
+      <Text style={styles.documentationText}>Para productos se recomienda completar code, category, unit, base_price y currency. El precio debe ser numérico, sin el símbolo de moneda.</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="5" title="Ejemplo de producto">
+      <Text style={styles.documentationText}>Este registro crea contexto de conocimiento y, al ser de tipo product, también una partida de catálogo:</Text>
+      <Text style={styles.codeBlock}>{`product,"Baldosa gres Brooklyn azul 50x50","Baldosa porcelánica para suelo de baño.",baldosa-brooklyn-azul-50x50,"Material de suelo",m²,22,EUR`}</Text>
+      <Text style={styles.documentationText}>El precio 22 representa 22 EUR por m². La pregunta del cliente sobre color, medidas o superficie debe configurarse aparte en el patrón del servicio.</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="6" title="Ejemplo de documentación y políticas">
+      <Text style={styles.documentationText}>Las entradas no deterministas deben escribirse con contexto suficiente para poder interpretarse sin conocer la conversación de origen:</Text>
+      <Text style={styles.codeBlock}>{`policy,"Garantía de los trabajos","Reformas Cortez ofrece 3 años de garantía sobre la instalación realizada por la empresa. No cubre mal uso, golpes ni materiales aportados por el cliente.",garantia-trabajos,,,`}</Text>
+      <Text style={styles.codeBlock}>{`sales_pattern,"Venta de reforma de baño","Preguntar primero si la reforma es parcial o integral. Después solicitar medidas, materiales, sanitarios, retirada y código postal.",patron-reforma-bano,,,`}</Text>
+      <Text style={styles.codeBlock}>{`faq,"¿La retirada de escombros está incluida?","No está incluida por defecto. Añadirla solo cuando el cliente solicite retirada y gestión de escombros.",faq-escombros,,,`}</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="7" title="Cómo redactar entradas útiles">
+      <DocumentationBullet title="Una idea por entrada" text="Divide una política extensa en varias entradas si contiene condiciones diferentes." />
+      <DocumentationBullet title="Títulos concretos" text="Usa Baldosa gres Brooklyn azul 50x50 en lugar de Producto de suelo 1." />
+      <DocumentationBullet title="Contenido autosuficiente" text="Escribe la respuesta completa, sin referencias como aquí o lo habitual." />
+      <DocumentationBullet title="Datos actuales" text="No cargues precios antiguos, duplicados ni documentos contradictorios." />
+      <DocumentationBullet title="Sin secretos" text="No incluyas contraseñas, claves API, datos personales innecesarios ni credenciales." />
+      <DocumentationBullet title="Datos ficticios de la POC" text="Los ejemplos pueden ser inventados, pero deben respetar unidades, monedas y reglas realistas." />
+    </DocumentationSection>
+
+    <DocumentationSection number="8" title="Proceso recomendado de carga y validación">
+      <DocumentationBullet title="1. Preparar" text="Reunir catálogo, precios vigentes, políticas y documentos autorizados por el tenant." />
+      <DocumentationBullet title="2. Revisar" text="Comprobar que no hay duplicados, que cada producto tiene unidad y que los precios son numéricos." />
+      <DocumentationBullet title="3. Importar" text="Entrar en Base de conocimiento, seleccionar el CSV y confirmar la importación." />
+      <DocumentationBullet title="4. Verificar" text="Consultar el listado de entradas importadas y revisar tipo, contenido y archivo de origen." />
+      <DocumentationBullet title="5. Configurar el servicio" text="Crear las preguntas, productos y reglas del servicio en Diseñador de servicios." />
+      <DocumentationBullet title="6. Probar" text="Enviar peticiones de ejemplo al chat y confirmar que Gemini pregunta lo necesario y que el importe lo calcula el motor determinista." />
+      <Text style={styles.documentationCallout}>La importación actual es por CSV. La carga directa de PDF o DOC todavía no está habilitada en la POC.</Text>
+    </DocumentationSection>
+  </View>;
+}
+
+function DocumentationSection({ number, title, children }: { number: string; title: string; children: ReactNode }) {
+  return <View style={styles.documentationSection}><Text style={styles.documentationSectionTitle}>{number}. {title}</Text>{children}</View>;
+}
+
+function DocumentationBullet({ title, text }: { title: string; text: string }) {
+  return <View style={styles.documentationBullet}><Text style={styles.documentationBulletTitle}>{title}</Text><Text style={styles.documentationText}>{text}</Text></View>;
 }
 
 type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean };
@@ -1293,7 +1386,7 @@ function ModulePlaceholder({ title, text }: { title: string; text: string }) {
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", knowledge: "Base de conocimiento", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
@@ -1440,6 +1533,14 @@ const styles = StyleSheet.create({
   metricLabel: { color: "#61736a", fontSize: 13, marginTop: 6 },
   panel: { backgroundColor: "#ffffff", borderRadius: 14, padding: 24, borderWidth: 1, borderColor: "#e1e8e3", marginBottom: 18 },
   panelTitle: { color: "#17332d", fontSize: 18, fontWeight: "700", marginBottom: 20 },
+  documentationIndex: { color: "#285246", fontSize: 14, lineHeight: 24 },
+  documentationSection: { backgroundColor: "#ffffff", borderRadius: 14, padding: 24, borderWidth: 1, borderColor: "#e1e8e3", marginBottom: 18 },
+  documentationSectionTitle: { color: "#17332d", fontSize: 17, fontWeight: "800", marginBottom: 14 },
+  documentationText: { color: "#52645b", fontSize: 14, lineHeight: 22, marginBottom: 10 },
+  documentationBullet: { borderTopWidth: 1, borderTopColor: "#edf1ee", paddingVertical: 10 },
+  documentationBulletTitle: { color: "#285246", fontSize: 14, fontWeight: "800", marginBottom: 3 },
+  documentationCallout: { color: "#285246", backgroundColor: "#edf7f0", borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 20, marginTop: 6 },
+  codeBlock: { color: "#d7e6dc", backgroundColor: "#17332d", borderRadius: 8, padding: 12, fontFamily: "monospace", fontSize: 12, lineHeight: 18, marginBottom: 10 },
   statusRow: { flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingVertical: 14 },
   statusRowLabel: { color: "#52645b", fontSize: 14 },
   statusRowValue: { color: "#258269", fontSize: 14, fontWeight: "700" },
