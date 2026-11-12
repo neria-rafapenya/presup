@@ -25,6 +25,14 @@ function clearCustomerSession(): void {
   try { window.localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY); } catch { /* storage may be unavailable */ }
 }
 
+function decorateLegacyOpening(body: string): string {
+  if (body.includes("**") || !body.startsWith("Hola")) return body;
+  return body
+    .replace(/^(Hola,\s+)([^.\n]+)(\.)/, "$1**$2**$3")
+    .replace(/más adecuado/g, "**más adecuado**")
+    .replace(/(Para saber si nuestro ámbito de actuación es viable,\s*¿dónde deberíamos prestar el servicio\?)/g, "**$1**");
+}
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) }, ...options });
   if (!response.ok) {
@@ -36,7 +44,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function PublicMessageBody({ body }: { body: string }) {
-  return <Text style={styles.messageText}>{body.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**") ? <Text key={`${part}-${index}`} style={styles.messageBold}>{part.slice(2, -2)}</Text> : part)}</Text>;
+  const formattedBody = decorateLegacyOpening(body);
+  return <Text style={styles.messageText}>{formattedBody.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**") ? <Text key={`${part}-${index}`} style={styles.messageBold}>{part.slice(2, -2)}</Text> : part)}</Text>;
 }
 
 export default function App() {
