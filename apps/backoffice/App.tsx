@@ -488,7 +488,7 @@ export default function App() {
       <StatusBar style="dark" />
       <View style={styles.sidebar}>
         <View style={styles.brandLockup}>
-          {Platform.OS === "web" ? createElement("img", { src: "/horekia-logo-backoffice-new.svg?v=2", alt: "HorekIA", style: styles.brandImage }) : <Text style={styles.brand}>HOREKIA</Text>}
+          {Platform.OS === "web" ? createElement("img", { src: "/horekia-logo-backoffice-new.svg?v=3", alt: "HorekIA", style: styles.brandImage }) : <Text style={styles.brand}>HOREKIA</Text>}
         </View>
         <Text style={styles.brandSub}>BACKOFFICE</Text>
         <View style={styles.nav}>
@@ -1803,8 +1803,8 @@ function screenTitle(screen: Screen) {
 const styles = StyleSheet.create({
   shell: { flex: 1, flexDirection: "row", backgroundColor: "#f6f7f5" },
   sidebar: { width: 250, padding: 28, backgroundColor: "#17332d", minHeight: "100%" },
-  brandLockup: { width: 194, height: 44, justifyContent: "center", overflow: "hidden" },
-  brandImage: { width: 194, height: 36 },
+  brandLockup: { width: 194, height: 44, justifyContent: "center", overflow: "hidden", backgroundColor: "transparent" },
+  brandImage: { width: 194, height: 36, backgroundColor: "transparent" },
   brand: { color: "#e7f2e9", fontSize: 22, fontWeight: "800", letterSpacing: 2 },
   brandSub: { color: "#8fc6a9", fontSize: 11, letterSpacing: 2, marginTop: 4 },
   nav: { gap: 6, marginTop: 48 },
