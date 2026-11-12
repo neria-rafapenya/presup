@@ -119,7 +119,7 @@ export default function App() {
     if (!content || !requestId || sending || conversationClosed) return;
     setDraft(""); setMessages((current) => [...current, { sender: "customer", body: content }]); setSending(true); setError(null);
     try {
-      const result = await api<{ reply: string; status?: string; field?: ActiveField | null; quote_available?: boolean; quote?: Quote }>(`/api/v1/public/conversations/${requestId}/messages`, { method: "POST", body: JSON.stringify({ content, ...(sessionToken ? { session_token: sessionToken } : {}) }) });
+      const result = await api<{ reply: string; status?: string; field?: ActiveField | null; quote_available?: boolean; quote?: Quote }>(`/api/v1/public/conversations/${requestId}/messages`, { method: "POST", body: JSON.stringify({ content, ...(activeField?.key ? { field_key: activeField.key } : {}), ...(sessionToken ? { session_token: sessionToken } : {}) }) });
       setMessages((current) => [...current, { sender: "assistant", body: result.reply }]); setActiveField(result.field ?? null); setConversationClosed(result.status === "closed"); if (result.quote_available) setQuoteAvailable(true); if (result.quote) setQuote(result.quote);
     } catch (requestError) {
       if (sessionToken) { setSessionToken(null); clearCustomerSession(); setError("Tu sesión ha caducado. Vuelve a identificarte para continuar."); }

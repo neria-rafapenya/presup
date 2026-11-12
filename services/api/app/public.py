@@ -343,7 +343,10 @@ def _coerce_field(field: dict[str, Any], content: str) -> Any | None:
     field_type = field.get("type")
     if field_type == "number":
         try:
-            number = Decimal(value.replace(",", "."))
+            numeric_match = re.search(r"(?<!\d)\d+(?:[.,]\d+)?(?!\d)", value)
+            if not numeric_match:
+                return None
+            number = Decimal(numeric_match.group(0).replace(",", "."))
             return int(number) if number == number.to_integral() else float(number)
         except Exception:
             return None
