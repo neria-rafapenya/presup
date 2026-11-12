@@ -1433,7 +1433,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
   const designerPanel = (
         <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
-          <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View></View>
+          <View style={styles.modalHeader}><View><Text style={styles.designerContextTitle}>DISEÑAR SERVICIO</Text><Text style={styles.designerServiceName}>{service.name}</Text></View></View>
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
           <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
             <View style={styles.templateChoices}>
@@ -1975,6 +1975,8 @@ const styles = StyleSheet.create({
   metricLabel: { color: "#61736a", fontSize: 13, marginTop: 6 },
   panel: { backgroundColor: "#ffffff", borderRadius: 14, padding: 24, borderWidth: 1, borderColor: "#e1e8e3", marginBottom: 18 },
   panelTitle: { color: "#17332d", fontSize: 18, fontWeight: "700", marginBottom: 20 },
+  designerContextTitle: { color: "#258269", fontSize: 12, fontWeight: "800", letterSpacing: 1.5 },
+  designerServiceName: { color: "#17332d", fontSize: 30, lineHeight: 36, fontWeight: "800", marginTop: 5, marginBottom: 8 },
   documentationIndex: { color: "#285246", fontSize: 14, lineHeight: 24 },
   documentationDocument: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: "#dbe6df", borderRadius: 9, backgroundColor: "#fbfcfb", padding: 12, marginTop: 8 },
   documentationDocumentActive: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: "#8fc6a9", borderRadius: 9, backgroundColor: "#edf7f0", padding: 12 },
