@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "wizard" | "dashboard" | "company" | "services" | "designer" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "services" | "knowledge" | "designer" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -120,6 +120,7 @@ function routeFromPath(pathname: string): AppRoute | null {
   if (path === "/dashboard") return { screen: "dashboard" };
   if (path === "/company") return { screen: "company" };
   if (path === "/services") return { screen: "services" };
+  if (path === "/knowledge") return { screen: "knowledge" };
   if (path === "/designer") return { screen: "designer" };
   if (path === "/requests") return { screen: "requests" };
   if (path === "/quotes") return { screen: "quotes" };
@@ -370,6 +371,7 @@ export default function App() {
           <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
           <NavButton label="Servicios y fichas" active={screen === "services"} onPress={() => navigate("services")} />
+          <NavButton label="Base de conocimiento" active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           <NavButton label="Diseñador de servicios" active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); navigate("designer", designerService?.id ?? undefined); }} />
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
@@ -406,10 +408,13 @@ export default function App() {
               ) : null}
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
-                <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
+                <Company summary={summary} setSummary={setSummary} profile={profile} setProfile={setProfile} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onSave={saveSettings} saving={saving} />
               ) : null}
               {screen === "services" ? (
                 <Services services={services} onCreate={createService} onDelete={deleteService} onDesignService={(service) => openDesigner(service, "services")} saving={saving} />
+              ) : null}
+              {screen === "knowledge" ? (
+                <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={importKnowledge} saving={saving} />
               ) : null}
               {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
               {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
@@ -451,8 +456,6 @@ function Dashboard({ summary }: { summary: Summary }) {
 
 function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(initialStep);
-  const [serviceModalOpen, setServiceModalOpen] = useState(false);
-  const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
     if (typeof window !== "undefined") window.localStorage.setItem(WIZARD_STORAGE_KEY, "true");
@@ -471,25 +474,13 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
       </View>
       <View style={styles.panel}>
         {step === 0 ? (
-          <>
-            <Text style={styles.panelTitle}>1. Datos de empresa</Text>
-            <TenantProfileForm profile={profile} setProfile={setProfile} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} />
-          </>
+          <Company summary={summary} profile={profile} setProfile={setProfile} onSaveProfile={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} embedded />
         ) : null}
         {step === 1 ? (
-          <>
-            <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
-            <Text style={styles.wizardText}>Define aquí los productos o servicios que tu empresa quiere presupuestar. Si tienes una imprenta, una empresa de reformas o un taller mecánico, crea cada tipo de trabajo que ofreces y después configura sus preguntas, opciones y precios. Así la IA tendrá el contexto necesario para entender la petición, pedir los datos que falten y responder con un presupuesto conciso.</Text>
-            {services.map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesignService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
-            <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
-          </>
+          <Services services={services} onCreate={onCreateService} onDelete={onDeleteService} onDesignService={onDesignService} saving={saving} embedded />
         ) : null}
         {step === 2 ? (
-          <>
-            <Text style={styles.panelTitle}>3. Base de conocimiento</Text>
-            <Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>
-            <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImportKnowledge} saving={saving} />
-          </>
+          <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImportKnowledge} saving={saving} embedded />
         ) : null}
         {step === 3 ? (
           <>
@@ -503,13 +494,19 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           {step < steps.length - 1 ? <Pressable style={styles.primaryButton} onPress={() => setStep(step + 1)}><Text style={styles.primaryLabel}>Continuar</Text></Pressable> : <Pressable style={styles.primaryButton} onPress={finish}><Text style={styles.primaryLabel}>Terminar configuración</Text></Pressable>}
         </View>
       </View>
-      <ServiceModal visible={serviceModalOpen} services={services} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
-      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDeleteService(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} />
     </View>
   );
 }
 
-function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
+type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean };
+
+function KnowledgePage({ knowledgeSummary, knowledgeEntries, onImport, saving, embedded = false }: KnowledgeImportProps & { embedded?: boolean }) {
+  const content = <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImport} saving={saving} />;
+  if (embedded) return <View><Text style={styles.panelTitle}>3. Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View>;
+  return <View><View style={styles.panel}><Text style={styles.panelTitle}>Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View></View>;
+}
+
+function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: KnowledgeImportProps) {
   const [sourceName, setSourceName] = useState("");
   const [rows, setRows] = useState<KnowledgeRow[]>([]);
 
@@ -649,26 +646,31 @@ function StatusRow({ label, value, good }: { label: string; value: string; good:
   return <View style={styles.statusRow}><Text style={styles.statusRowLabel}>{label}</Text><Text style={[styles.statusRowValue, !good && styles.statusOff]}>{value}</Text></View>;
 }
 
-function Company({ summary, setSummary, onSave, saving }: { summary: Summary; setSummary: (summary: Summary) => void; onSave: () => void; saving: boolean }) {
-  const update = (patch: Partial<Summary["settings"]>) => setSummary({ ...summary, settings: { ...summary.settings, ...patch } });
+function Company({ summary, setSummary, profile, setProfile, onSaveProfile, onUploadTemplate, onSave, saving, embedded = false }: { summary: Summary; setSummary?: (summary: Summary) => void; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onSave?: () => void; saving: boolean; embedded?: boolean }) {
+  const update = (patch: Partial<Summary["settings"]>) => {
+    if (setSummary) setSummary({ ...summary, settings: { ...summary.settings, ...patch } });
+  };
   return (
-    <View style={styles.panel}>
-      <Text style={styles.panelTitle}>Configuración de empresa</Text>
-      <Text style={styles.fieldLabel}>Nombre</Text>
-      <Text style={styles.readonly}>{summary.tenant.name}</Text>
-      <View style={styles.formGrid}>
-        <Field label="Moneda" value={summary.settings.currency} onChangeText={(currency) => update({ currency })} />
-        <Field label="IVA (%)" value={String(summary.settings.tax_rate)} keyboardType="decimal-pad" onChangeText={(tax_rate) => update({ tax_rate })} />
-        <Field label="Validez (días)" value={String(summary.settings.quote_validity_days)} keyboardType="number-pad" onChangeText={(value) => update({ quote_validity_days: Number(value) || 0 })} />
-      </View>
-      <Toggle label="Revisión humana obligatoria" value={summary.settings.review_required} onPress={() => update({ review_required: !summary.settings.review_required })} />
-      <Toggle label="Chat público habilitado" value={summary.settings.public_chat_enabled} onPress={() => update({ public_chat_enabled: !summary.settings.public_chat_enabled })} />
-      <Pressable style={styles.primaryButton} onPress={onSave} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar cambios"}</Text></Pressable>
+    <View>
+      {!embedded ? <View style={styles.panel}><Text style={styles.panelTitle}>Datos de empresa</Text><TenantProfileForm profile={profile} setProfile={setProfile} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} /></View> : <><Text style={styles.panelTitle}>1. Datos de empresa</Text><TenantProfileForm profile={profile} setProfile={setProfile} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} /></>}
+      {!embedded && setSummary && onSave ? <View style={styles.panel}>
+        <Text style={styles.panelTitle}>Configuración de operación</Text>
+        <Text style={styles.fieldLabel}>Nombre de la instalación</Text>
+        <Text style={styles.readonly}>{summary.tenant.name}</Text>
+        <View style={styles.formGrid}>
+          <Field label="Moneda" value={summary.settings.currency} onChangeText={(currency) => update({ currency })} />
+          <Field label="IVA (%)" value={String(summary.settings.tax_rate)} keyboardType="decimal-pad" onChangeText={(tax_rate) => update({ tax_rate })} />
+          <Field label="Validez (días)" value={String(summary.settings.quote_validity_days)} keyboardType="number-pad" onChangeText={(value) => update({ quote_validity_days: Number(value) || 0 })} />
+        </View>
+        <Toggle label="Revisión humana obligatoria" value={summary.settings.review_required} onPress={() => update({ review_required: !summary.settings.review_required })} />
+        <Toggle label="Chat público habilitado" value={summary.settings.public_chat_enabled} onPress={() => update({ public_chat_enabled: !summary.settings.public_chat_enabled })} />
+        <Pressable style={styles.primaryButton} onPress={onSave} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar configuración"}</Text></Pressable>
+      </View> : null}
     </View>
   );
 }
 
-function Services({ services, onCreate, onDelete, onDesignService, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; saving: boolean }) {
+function Services({ services, onCreate, onDelete, onDesignService, saving, embedded = false }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; saving: boolean; embedded?: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   return (
@@ -1241,7 +1243,7 @@ function ModulePlaceholder({ title, text }: { title: string; text: string }) {
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", knowledge: "Base de conocimiento", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
