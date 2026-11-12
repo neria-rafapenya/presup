@@ -135,6 +135,8 @@ def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tupl
 
 def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
     label = field["label"].lower()
+    if field.get("key") == COVERAGE_FIELD_KEY:
+        return f"**{field['label'].rstrip()}**"
     if field["label"].rstrip().endswith("?"):
         question = field["label"].rstrip()
         options = field.get("options") or []
@@ -197,8 +199,9 @@ def _opening_message(service: dict[str, Any], customer_name: str | None = None) 
     else:
         need = f"Quieres pedir un presupuesto de {service_name}."
     normalized_name = (customer_name or "").strip()
-    greeting = f"Hola, {normalized_name.split()[0]}.\n\n" if normalized_name else "Hola.\n\n"
-    return f"{greeting}{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
+    safe_first_name = re.sub(r"[*_`]", "", normalized_name.split()[0]) if normalized_name else ""
+    greeting = f"Hola, **{safe_first_name}**.\n\n" if safe_first_name else "Hola.\n\n"
+    return f"{greeting}{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto **más adecuado** a tus preferencias."
 
 
 def _normalized_words(value: str) -> set[str]:
