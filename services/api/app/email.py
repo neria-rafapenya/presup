@@ -63,7 +63,11 @@ def send_quote_email(
     request = urllib.request.Request(
         "https://api.resend.com/emails",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": f"Bearer {settings.resend_api_key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "HorekIA/0.1",
+        },
         method="POST",
     )
     try:
