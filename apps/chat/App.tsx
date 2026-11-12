@@ -73,6 +73,8 @@ export default function App() {
   const inputRef = useRef<TextInput | null>(null);
   const customerNameRef = useRef<TextInput | null>(null);
 
+  const restart = () => { setSelectedService(null); setRequestId(null); setMessages([]); setQuoteAvailable(false); setEmailSent(false); setEmailFailed(false); setActiveField(null); setConversationClosed(false); setCustomerName(""); setCustomerEmail(""); setAccountPassword(""); setAccountPasswordConfirmation(""); setError(null); };
+
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const link = document.createElement("link");
@@ -105,6 +107,12 @@ export default function App() {
     const timer = setTimeout(() => inputRef.current?.focus(), 80);
     return () => clearTimeout(timer);
   }, [selectedService, requestId, sending, conversationClosed, quoteAvailable, emailSent, messages.length]);
+
+  useEffect(() => {
+    if (!emailSent) return;
+    const timer = setTimeout(restart, 5000);
+    return () => clearTimeout(timer);
+  }, [emailSent]);
 
   useEffect(() => {
     if (!selectedService || requestId) return;
@@ -169,8 +177,6 @@ export default function App() {
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No se ha podido activar la cuenta."); }
     finally { setCompletingAccount(false); }
   };
-
-  const restart = () => { setSelectedService(null); setRequestId(null); setMessages([]); setQuoteAvailable(false); setEmailSent(false); setEmailFailed(false); setActiveField(null); setConversationClosed(false); setCustomerName(""); setCustomerEmail(""); setAccountPassword(""); setAccountPasswordConfirmation(""); setError(null); };
 
   const visibleServices = serviceQuery.trim()
     ? services.filter((service) => `${service.name} ${service.slug} ${service.description ?? ""}`.toLocaleLowerCase().includes(serviceQuery.trim().toLocaleLowerCase()))
