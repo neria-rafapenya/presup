@@ -92,6 +92,26 @@ def _field_question(field: dict[str, Any]) -> str:
             return f"¿Tu {subject} será **{options[0]}** o **{options[1]}**?"
         choices = ", ".join(f"**{option}**" for option in options[:-1]) + f" o **{options[-1]}**"
         return f"¿Qué {subject} prefieres? {choices}."
+    if field.get("type") == "number":
+        unit_words = {
+            "m²": "metros cuadrados",
+            "m2": "metros cuadrados",
+            "m": "metros",
+            "cm": "centímetros",
+            "mm": "milímetros",
+            "ud": "unidades",
+            "unidad": "unidades",
+            "hora": "horas",
+            "día": "días",
+            "kg": "kilos",
+        }
+        unit = unit_words.get(str(field.get("unit", "")).lower())
+        if unit:
+            if label in {"unidades", "cantidad"}:
+                return f"Bien, ¿cuántas {unit} necesitas?"
+            article = "la " if label.startswith(("superficie", "altura", "anchura", "longitud", "distancia")) else ""
+            return f"Bien, ¿cuántos {unit} tiene {article}{label}?"
+        return f"Bien, ¿qué cantidad de {label} necesitas?"
     question = field["label"]
     if field.get("unit"):
         question += f" [{field['unit']}]"
@@ -119,9 +139,7 @@ def _friendly_retry(field: dict[str, Any]) -> str:
             choices = ", ".join(options[:-1]) + f" o {options[-1]}"
         return f"Vale. ¿Qué {label} quieres? Puedes elegir {choices}."
     if field.get("type") == "number":
-        unit = f" en {field['unit']}" if field.get("unit") else ""
-        example = f" Por ejemplo: {field['example']}." if field.get("example") else ""
-        return f"Perfecto. Para continuar necesito indicar la cantidad{unit}.{example}"
+        return f"Entendido. Necesito que me indiques la cantidad de {field['label'].lower()}."
     if field.get("type") == "boolean":
         return f"Gracias. Para continuar, ¿{label}? Responde sí o no."
     return f"Gracias. Para continuar necesito que me indiques {label}."
