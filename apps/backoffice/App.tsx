@@ -493,6 +493,7 @@ export default function App() {
     setDesignerService(null);
     navigate(designerReturnScreen === "designer" ? "wizard" : designerReturnScreen);
   };
+  const handleLogout = () => setError("El cierre de sesión estará disponible cuando integremos la autenticación.");
 
   return (
     <View style={[styles.shell, Platform.OS === "web" ? latoRootStyle : null]}>
@@ -516,8 +517,16 @@ export default function App() {
         <View style={styles.sidebarBottom}>
           <NavButton label="Documentación" active={screen === "documentation"} onPress={() => navigate("documentation")} />
           <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
-          <Text style={styles.sidebarHint}>Instalación POC</Text>
-          <Text style={styles.sidebarMuted}>{summary?.tenant.name ?? "Cargando empresa…"}</Text>
+          <View style={styles.sidebarSeparator} />
+          <View style={styles.tenantFooter}>
+            <Pressable style={styles.tenantLink} onPress={() => navigate("company")} accessibilityRole="link" accessibilityLabel="Abrir Empresa">
+              <Text style={styles.tenantCaption}>Empresa</Text>
+              <Text style={styles.tenantName}>{summary?.tenant.name ?? "Cargando empresa…"}</Text>
+            </Pressable>
+            <Pressable style={styles.logoutButton} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="Cerrar sesión">
+              <Text style={styles.logoutIcon}>⎋</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -1829,8 +1838,13 @@ const styles = StyleSheet.create({
   navLabelChild: { fontSize: 13 },
   navLabelActive: { color: "#ffffff", fontWeight: "900" },
   sidebarBottom: { marginTop: "auto", paddingTop: 32 },
-  sidebarHint: { color: "#8fc6a9", fontSize: 12 },
-  sidebarMuted: { color: "#d7e6dc", fontSize: 13, marginTop: 6 },
+  sidebarSeparator: { height: 1, backgroundColor: "#3b6b5a", marginVertical: 18 },
+  tenantFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  tenantLink: { flex: 1, borderRadius: 8, paddingVertical: 5 },
+  tenantCaption: { color: "#8fc6a9", fontSize: 11, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
+  tenantName: { color: "#ffffff", fontSize: 14, fontWeight: "400", marginTop: 5 },
+  logoutButton: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: "#4e7a6a", alignItems: "center", justifyContent: "center" },
+  logoutIcon: { color: "#d7e6dc", fontSize: 21, fontWeight: "400", lineHeight: 22 },
   helpLayer: { position: "absolute", right: 22, bottom: 22, alignItems: "flex-end", zIndex: 80 },
   helpCard: { width: 320, height: 460, backgroundColor: "#ffffff", borderRadius: 14, borderWidth: 1, borderColor: "#dbe6df", padding: 16, marginBottom: 12, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
   helpHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingBottom: 10 },
