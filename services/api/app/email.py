@@ -71,10 +71,20 @@ def send_quote_email(
         with urllib.request.urlopen(request, timeout=20, context=ssl_context) as response:
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        response_body = exc.read().decode("utf-8", errors="replace").strip()
         try:
-            detail = json.loads(exc.read().decode("utf-8")).get("message", "Resend rechazó el envío")
+            provider_error = json.loads(response_body)
+            detail = (
+                provider_error.get("message")
+                or provider_error.get("error")
+                or provider_error.get("detail")
+            )
         except (OSError, json.JSONDecodeError):
-            detail = "Resend rechazó el envío"
+            detail = None
+        if not detail:
+            detail = f"Resend rechazó el envío (HTTP {exc.code})"
+            if response_body:
+                detail += f": {response_body[:300]}"
         raise EmailDeliveryError(str(detail)) from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise EmailDeliveryError("No se ha podido conectar con Resend") from exc
