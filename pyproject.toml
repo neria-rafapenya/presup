@@ -9,6 +9,7 @@ description = "API base de Horekia"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "fastapi>=0.115,<1",
+  "certifi>=2026.2.25,<2027",
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.6,<3",
   "psycopg[binary]>=3.2,<4",

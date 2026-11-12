@@ -2,6 +2,7 @@
 
 import io
 import json
+import ssl
 import urllib.error
 import urllib.request
 from decimal import Decimal
@@ -10,6 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
+import certifi
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
@@ -161,7 +163,8 @@ def _ask_gemini_documentation(messages: list[DocumentationChatMessage], settings
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(request, timeout=45, context=ssl_context) as response:
             result = json.loads(response.read().decode("utf-8"))
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
         raise HTTPException(status_code=502, detail="El servicio de ayuda de Gemini no está disponible") from exc
