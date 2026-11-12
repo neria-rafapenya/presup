@@ -95,6 +95,12 @@ def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
     if field.get("type") == "number":
         prefixes = ("Bien", "Vale", "Ok", "Recibido")
         prefix = prefixes[prompt_index % len(prefixes)]
+        if label.startswith("superficie de "):
+            subject = f"la superficie de las {label.removeprefix('superficie de ')}"
+        elif label.startswith("superficie "):
+            subject = f"la {label}"
+        else:
+            subject = label
         unit_words = {
             "m²": "metros cuadrados",
             "m2": "metros cuadrados",
@@ -111,8 +117,9 @@ def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
         if unit:
             if label in {"unidades", "cantidad"}:
                 return f"{prefix}, ¿cuántas {unit} necesitas?"
-            article = "la " if label.startswith(("superficie", "altura", "anchura", "longitud", "distancia")) else ""
-            return f"{prefix}, ¿cuántos {unit} tiene {article}{label}?"
+            if subject == label and label.startswith(("altura", "anchura", "longitud", "distancia")):
+                subject = f"la {label}"
+            return f"{prefix}, ¿cuántos {unit} tiene {subject}?"
         return f"{prefix}, ¿qué cantidad de {label} necesitas?"
     question = field["label"]
     if field.get("unit"):
