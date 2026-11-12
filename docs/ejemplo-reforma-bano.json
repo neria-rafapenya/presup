@@ -122,12 +122,12 @@
       "example": "sí"
     },
     {
-      "key": "desplazamiento_fuera_de_zona",
-      "label": "¿La vivienda está fuera de nuestra zona habitual?",
-      "type": "boolean",
+      "key": "ubicacion_servicio",
+      "label": "Para saber si nuestro ámbito de actuación es viable, ¿dónde deberíamos prestar el servicio?",
+      "type": "text",
       "required": true,
-      "help_text": "La empresa puede confirmar este dato según el código postal.",
-      "example": "no"
+      "help_text": "Indica la ciudad o el código postal de la vivienda. Se comprobará si está a menos de 100 km de la ciudad configurada por la empresa.",
+      "example": "Torredembarra"
     }
   ],
   "items": [
@@ -149,8 +149,7 @@
     { "sku": "griferia_estandar", "name": "Grifería estándar", "description": "Grifería estándar de ejemplo.", "unit": "unidad", "base_price": 95, "currency": "EUR", "metadata": { "familia": "griferia" } },
     { "sku": "griferia_premium", "name": "Grifería premium", "description": "Grifería premium de ejemplo.", "unit": "unidad", "base_price": 240, "currency": "EUR", "metadata": { "familia": "griferia" } },
     { "sku": "retirada_escombros", "name": "Retirada de escombros", "description": "Carga y retirada de escombros. Precio ficticio de ejemplo.", "unit": "servicio", "base_price": 180, "currency": "EUR", "metadata": { "familia": "extra" } },
-    { "sku": "suplemento_reforma_integral", "name": "Suplemento de reforma integral", "description": "Coste fijo orientativo de coordinación de reforma integral.", "unit": "servicio", "base_price": 600, "currency": "EUR", "metadata": { "familia": "extra" } },
-    { "sku": "desplazamiento_fuera_zona", "name": "Desplazamiento fuera de zona", "description": "Suplemento de desplazamiento fuera de la zona habitual.", "unit": "servicio", "base_price": 65, "currency": "EUR", "metadata": { "familia": "extra" } }
+    { "sku": "suplemento_reforma_integral", "name": "Suplemento de reforma integral", "description": "Coste fijo orientativo de coordinación de reforma integral.", "unit": "servicio", "base_price": 600, "currency": "EUR", "metadata": { "familia": "extra" } }
   ],
   "rules": [
     { "code": "material_suelo_gres_by_area", "kind": "formula", "priority": 10, "definition": { "item": "material_suelo_gres", "quantity": "suelo_con_desperdicio", "when": { "tipo_de_suelo": "baldosa gres" } } },
@@ -172,7 +171,6 @@
     { "code": "griferia_premium_fixed", "kind": "formula", "priority": 61, "definition": { "item": "griferia_premium", "quantity": 1, "when": { "tipo_de_griferia": "premium" } } },
     { "code": "retirada_escombros_fixed", "kind": "surcharge", "priority": 70, "definition": { "item": "retirada_escombros", "quantity": 1, "when": { "retirada_escombros": true } } },
     { "code": "reforma_integral_surcharge", "kind": "surcharge", "priority": 71, "definition": { "item": "suplemento_reforma_integral", "quantity": 1, "when": { "tipo_de_reforma": "integral" } } },
-    { "code": "desplazamiento_surcharge", "kind": "surcharge", "priority": 72, "definition": { "item": "desplazamiento_fuera_zona", "quantity": 1, "when": { "desplazamiento_fuera_de_zona": true } } },
     { "code": "minimum_bathroom_quote", "kind": "minimum", "priority": 200, "definition": { "amount": 450 } }
   ],
   "measures": [

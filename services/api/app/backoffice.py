@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import ssl
 import urllib.error
 import urllib.request
@@ -21,6 +22,7 @@ from .db import POC_TENANT_ID, db_session
 from .documentation import BACKOFFICE_HELP_CONTEXT
 
 router = APIRouter(prefix="/api/v1/backoffice", tags=["backoffice"])
+logger = logging.getLogger(__name__)
 
 
 class SettingsPatch(BaseModel):
@@ -542,6 +544,43 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
                 (POC_TENANT_ID, job_type_id, next_version, Jsonb([field.model_dump(mode="json", exclude_none=True) for field in payload.fields])),
             )
 
+            item_skus = [item.sku for item in payload.items]
+            rule_codes = [rule.code for rule in payload.rules]
+            measure_codes = [measure.code for measure in payload.measures]
+            if item_skus:
+                item_placeholders = ", ".join("%s" for _ in item_skus)
+                conn.execute(
+                    f"delete from public.horekia_items where tenant_id = %s and job_type_id = %s and (sku is null or sku not in ({item_placeholders}))",
+                    (POC_TENANT_ID, job_type_id, *item_skus),
+                )
+            else:
+                conn.execute(
+                    "delete from public.horekia_items where tenant_id = %s and job_type_id = %s",
+                    (POC_TENANT_ID, job_type_id),
+                )
+            if rule_codes:
+                rule_placeholders = ", ".join("%s" for _ in rule_codes)
+                conn.execute(
+                    f"delete from public.horekia_price_rules where tenant_id = %s and job_type_id = %s and code not in ({rule_placeholders})",
+                    (POC_TENANT_ID, job_type_id, *rule_codes),
+                )
+            else:
+                conn.execute(
+                    "delete from public.horekia_price_rules where tenant_id = %s and job_type_id = %s",
+                    (POC_TENANT_ID, job_type_id),
+                )
+            if measure_codes:
+                measure_placeholders = ", ".join("%s" for _ in measure_codes)
+                conn.execute(
+                    f"delete from public.horekia_computed_measures where tenant_id = %s and job_type_id = %s and code not in ({measure_placeholders})",
+                    (POC_TENANT_ID, job_type_id, *measure_codes),
+                )
+            else:
+                conn.execute(
+                    "delete from public.horekia_computed_measures where tenant_id = %s and job_type_id = %s",
+                    (POC_TENANT_ID, job_type_id),
+                )
+
             for item in payload.items:
                 metadata = dict(item.metadata)
                 metadata["service_blueprint"] = True
@@ -596,6 +635,7 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("No se pudo guardar el patrón del servicio %s", job_type_id)
         if "duplicate key" in str(exc).lower():
             raise HTTPException(status_code=409, detail="Hay códigos repetidos en el patrón del servicio") from exc
         raise database_error(exc) from exc

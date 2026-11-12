@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
 from .db import POC_TENANT_ID, db_session
+from .geo import check_service_coverage
 
 router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
@@ -91,6 +92,8 @@ def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tupl
 
 def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
     label = field["label"].lower()
+    if field["label"].rstrip().endswith("?"):
+        return field["label"].rstrip()
     if field.get("type") == "choice" and field.get("options"):
         subject = label.removeprefix("tipo de ")
         options = field["options"]
@@ -129,7 +132,9 @@ def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
         return f"{prefix}, ¿qué cantidad de {label} necesitas?"
     if field.get("type") == "boolean":
         return field["label"].rstrip(".")
-    question = field["label"]
+    question = field["label"].rstrip(".")
+    if question.endswith("?"):
+        return question
     if field.get("unit"):
         question += f" [{field['unit']}]"
     if field.get("example") and field.get("type") != "choice":
@@ -364,11 +369,14 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         request = conn.execute("select id, job_type_id, status, intake_data from public.horekia_requests where tenant_id = %s and id = %s", (tenant_id, request_id)).fetchone()
         if not request:
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        if request["status"] == "closed":
+            return {"request_id": str(request_id), "status": "closed", "reply": "Esta solicitud se ha cerrado porque la ubicación indicada está fuera de nuestro radio de actuación.", "field": None, "intake_data": request["intake_data"]}
         service = conn.execute("select id, name, slug from public.horekia_job_types where tenant_id = %s and id = %s", (tenant_id, request["job_type_id"])).fetchone()
         blueprint = _blueprint(conn, tenant_id, request["job_type_id"])
         intake = dict(request["intake_data"] or {})
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body) values (%s, %s, 'customer', %s)", (tenant_id, request_id, payload.content))
         field = next((item for item in blueprint["fields"] if item.get("key") == payload.field_key), None) if payload.field_key else _next_missing(blueprint["fields"], intake)
+        coverage = None
         if field:
             value = _coerce_field(field, payload.content)
             if value is None:
@@ -380,6 +388,22 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 ) or _friendly_retry(field)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake}
+            if field.get("key") == "ubicacion_servicio":
+                profile = conn.execute("select city from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
+                coverage = check_service_coverage(profile["city"] if profile else None, str(value))
+                if coverage["status"] == "unavailable":
+                    if coverage["reason"] == "origin_not_configured":
+                        reply = "Todavía no puedo validar el radio de actuación porque la ciudad de la empresa no está configurada en sus datos."
+                    else:
+                        reply = "No he podido localizar esa ubicación. Indícame una ciudad o un código postal de cinco cifras para comprobar si está dentro de nuestro radio de actuación."
+                    conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
+                    return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake, "coverage": coverage}
+                if coverage["status"] == "outside_radius":
+                    intake[field["key"]] = value
+                    reply = f"Lo siento, no es posible calcular este presupuesto porque la ubicación indicada está a {coverage['distance_km']} km de nuestra ciudad de referencia y nuestro radio de actuación es inferior a 100 km."
+                    conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'closed', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
+                    conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
+                    return {"request_id": str(request_id), "status": "closed", "reply": reply, "field": None, "intake_data": intake, "coverage": coverage, "eligible": False}
             intake[field["key"]] = value
         next_field = _next_missing(blueprint["fields"], intake)
         missing = [item["key"] for item in blueprint["fields"] if item.get("required") and item["key"] not in intake]
@@ -389,8 +413,15 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             )
             reply = _field_question(next_field, numeric_prompt_index)
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb(missing), tenant_id, request_id))
-            conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"field": next_field["key"]}), Jsonb({"source": "service_blueprint"})))
-            return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field), "intake_data": intake}
+            structured_data = {"field": next_field["key"]}
+            if coverage:
+                structured_data["coverage"] = coverage
+            conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(structured_data), Jsonb({"source": "service_blueprint"})))
+            response = {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field), "intake_data": intake}
+            if coverage:
+                response["coverage"] = coverage
+                response["eligible"] = True
+            return response
         try:
             tenant_settings = conn.execute("select currency, tax_rate, configuration_version from public.horekia_tenant_settings where tenant_id = %s", (tenant_id,)).fetchone()
             quote, calculation = _create_quote(conn, tenant_id, request_id, service["id"], blueprint, intake, tenant_settings)

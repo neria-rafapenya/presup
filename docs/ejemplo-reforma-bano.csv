@@ -15,7 +15,7 @@ reforma-de-bano,field,incluye_mampara,¿Quieres incluir una mampara?,,boolean,,t
 reforma-de-bano,field,incluye_mueble_bano,¿Quieres incluir un mueble de baño?,,boolean,,true,,sí,,,,,
 reforma-de-bano,field,tipo_de_griferia,Tipo de grifería,Escoge la calidad de grifería que quieres incluir.,choice,ninguna|estándar|premium,true,,estándar,,,,,
 reforma-de-bano,field,retirada_escombros,¿Quieres incluir retirada de escombros?,,boolean,,true,,sí,,,,,
-reforma-de-bano,field,desplazamiento_fuera_de_zona,¿La vivienda está fuera de nuestra zona habitual?,La empresa puede confirmarlo según el código postal.,boolean,,true,,no,,,,,
+reforma-de-bano,field,ubicacion_servicio,"Para saber si nuestro ámbito de actuación es viable, ¿dónde deberíamos prestar el servicio?","Indica la ciudad o el código postal de la vivienda. Se comprobará si está a menos de 100 km de la ciudad configurada por la empresa.",text,,true,,Torredembarra,,,,,
 reforma-de-bano,item,material_suelo_gres,Baldosa de gres para suelo,Material de suelo de gres. Precio ficticio.,, ,false,m²,,22,EUR,,,,
 reforma-de-bano,item,material_suelo_porcelanico,Porcelánico para suelo,Material porcelánico para suelo. Precio ficticio.,, ,false,m²,,29,EUR,,,,
 reforma-de-bano,item,material_suelo_microcemento,Microcemento para suelo,Acabado de microcemento para suelo. Precio ficticio.,, ,false,m²,,42,EUR,,,,
@@ -35,7 +35,6 @@ reforma-de-bano,item,griferia_estandar,Grifería estándar,Grifería estándar d
 reforma-de-bano,item,griferia_premium,Grifería premium,Grifería premium de ejemplo.,, ,false,unidad,,240,EUR,,,,
 reforma-de-bano,item,retirada_escombros,Retirada de escombros,Carga y retirada de escombros.,, ,false,servicio,,180,EUR,,,,
 reforma-de-bano,item,suplemento_reforma_integral,Suplemento de reforma integral,Coste fijo orientativo de coordinación.,, ,false,servicio,,600,EUR,,,,
-reforma-de-bano,item,desplazamiento_fuera_zona,Desplazamiento fuera de zona,Suplemento fuera de zona habitual.,, ,false,servicio,,65,EUR,,,,
 reforma-de-bano,rule,material_suelo_gres_by_area,,,,,,,,,,10,formula,"{""item"": ""material_suelo_gres"", ""quantity"": ""suelo_con_desperdicio"", ""when"": {""tipo_de_suelo"": ""baldosa gres""}}",
 reforma-de-bano,rule,material_suelo_porcelanico_by_area,,,,,,,,,,11,formula,"{""item"": ""material_suelo_porcelanico"", ""quantity"": ""suelo_con_desperdicio"", ""when"": {""tipo_de_suelo"": ""porcelánico""}}",
 reforma-de-bano,rule,material_suelo_microcemento_by_area,,,,,,,,,,12,formula,"{""item"": ""material_suelo_microcemento"", ""quantity"": ""suelo_con_desperdicio"", ""when"": {""tipo_de_suelo"": ""microcemento""}}",
@@ -55,7 +54,6 @@ reforma-de-bano,rule,griferia_estandar_fixed,,,,,,,,,,60,formula,"{""item"": ""g
 reforma-de-bano,rule,griferia_premium_fixed,,,,,,,,,,61,formula,"{""item"": ""griferia_premium"", ""quantity"": 1, ""when"": {""tipo_de_griferia"": ""premium""}}",
 reforma-de-bano,rule,retirada_escombros_fixed,,,,,,,,,,70,surcharge,"{""item"": ""retirada_escombros"", ""quantity"": 1, ""when"": {""retirada_escombros"": true}}",
 reforma-de-bano,rule,reforma_integral_surcharge,,,,,,,,,,71,surcharge,"{""item"": ""suplemento_reforma_integral"", ""quantity"": 1, ""when"": {""tipo_de_reforma"": ""integral""}}",
-reforma-de-bano,rule,desplazamiento_surcharge,,,,,,,,,,72,surcharge,"{""item"": ""desplazamiento_fuera_zona"", ""quantity"": 1, ""when"": {""desplazamiento_fuera_de_zona"": true}}",
 reforma-de-bano,rule,minimum_bathroom_quote,,,,,,,,,,200,minimum,"{""amount"": 450}",
 reforma-de-bano,measure,suelo_con_desperdicio,,,,,,,,,,,, ,"{""left"": ""superficie_del_suelo"", ""right"": 1.1, ""operation"": ""multiply""}"
 reforma-de-bano,measure,paredes_con_desperdicio,,,,,,,,,,,, ,"{""left"": ""superficie_de_paredes"", ""right"": 1.1, ""operation"": ""multiply""}"
