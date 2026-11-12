@@ -94,6 +94,24 @@ def _field_question(field: dict[str, Any]) -> str:
     return question + "."
 
 
+def _friendly_retry(field: dict[str, Any]) -> str:
+    label = field["label"].lower()
+    if field.get("type") == "choice" and field.get("options"):
+        options = field["options"]
+        if len(options) == 2:
+            choices = f"{options[0]} o {options[1]}"
+        else:
+            choices = ", ".join(options[:-1]) + f" o {options[-1]}"
+        return f"Vale. ¿Qué {label} quieres? Puedes elegir {choices}."
+    if field.get("type") == "number":
+        unit = f" en {field['unit']}" if field.get("unit") else ""
+        example = f" Por ejemplo: {field['example']}." if field.get("example") else ""
+        return f"Perfecto. Para continuar necesito indicar la cantidad{unit}.{example}"
+    if field.get("type") == "boolean":
+        return f"Gracias. Para continuar, ¿{label}? Responde sí o no."
+    return f"Gracias. Para continuar necesito que me indiques {label}."
+
+
 def _next_missing(fields: list[dict[str, Any]], intake: dict[str, Any]) -> dict[str, Any] | None:
     return next((field for field in fields if field.get("required") and field["key"] not in intake), None)
 
@@ -115,7 +133,12 @@ def _coerce_field(field: dict[str, Any], content: str) -> Any | None:
         return None
     if field_type == "choice":
         options = field.get("options") or []
-        return next((option for option in options if option.lower() == value.lower()), None)
+        normalized = value.lower()
+        exact = next((option for option in options if option.lower() == normalized), None)
+        if exact:
+            return exact
+        words = normalized.replace(",", " ").replace(".", " ").replace(";", " ").replace(":", " ").split()
+        return next((option for option in options if option.lower() in words), None)
     return value or None
 
 
@@ -222,7 +245,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         if field:
             value = _coerce_field(field, payload.content)
             if value is None:
-                reply = f"No he entendido ese dato. {_field_question(field)}"
+                reply = _friendly_retry(field)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "intake_data": intake}
             intake[field["key"]] = value
