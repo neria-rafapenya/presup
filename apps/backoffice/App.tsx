@@ -451,11 +451,11 @@ export default function App() {
             <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("wizard"); navigate("designer", designerService?.id ?? undefined); }} />
             <NavButton label="Base de conocimiento" child active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           </View>
-          <NavButton label="Documentación" active={screen === "documentation"} onPress={() => navigate("documentation")} />
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
         </View>
         <View style={styles.sidebarBottom}>
+          <NavButton label="Documentación" active={screen === "documentation"} onPress={() => navigate("documentation")} />
           <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
           <Text style={styles.sidebarHint}>Instalación POC</Text>
           <Text style={styles.sidebarMuted}>{summary?.tenant.name ?? "Cargando empresa…"}</Text>
