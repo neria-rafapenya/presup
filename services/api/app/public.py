@@ -185,13 +185,15 @@ def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
     return question + "."
 
 
-def _opening_message(service: dict[str, Any]) -> str:
+def _opening_message(service: dict[str, Any], customer_name: str | None = None) -> str:
     service_name = service["name"].strip().lower()
     if service_name.startswith("reforma de "):
         need = f"Quieres reformar tu {service_name.removeprefix('reforma de ')}."
     else:
         need = f"Quieres pedir un presupuesto de {service_name}."
-    return f"{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
+    normalized_name = (customer_name or "").strip()
+    greeting = f"Hola, {normalized_name.split()[0]}.\n\n" if normalized_name else "Hola.\n\n"
+    return f"{greeting}{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
 
 
 def _normalized_words(value: str) -> set[str]:
@@ -561,7 +563,7 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
         blueprint = _blueprint(conn, tenant["id"], service["id"])
         fields = _chat_fields(blueprint)
         first_field = _next_missing(fields, {})
-        opening = _opening_message(service)
+        opening = _opening_message(service, customer.get("name") or payload.customer_name)
         if first_field:
             opening += f"\n\n{_field_question(first_field, 0)}"
         request = conn.execute(
