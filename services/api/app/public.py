@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
 from .db import POC_TENANT_ID, db_session
-from .geo import CITY_COORDINATES, check_service_coverage
+from .geo import CITY_COORDINATES, COVERAGE_FIELD, COVERAGE_FIELD_KEY, check_service_coverage
 
 router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
@@ -68,7 +68,14 @@ def _blueprint(conn: Any, tenant_id: UUID, job_type_id: UUID) -> dict[str, Any]:
         """,
         (tenant_id, job_type_id),
     ).fetchall()
-    return {"fields": schema["fields"] if schema else [], "items": items, "rules": rules, "measures": measures}
+    fields = [field for field in (schema["fields"] if schema else []) if field.get("key") != COVERAGE_FIELD_KEY]
+    return {"fields": fields, "items": items, "rules": rules, "measures": measures}
+
+
+def _chat_fields(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return tenant-wide coverage first, followed by this service's fields."""
+
+    return [dict(COVERAGE_FIELD), *blueprint["fields"]]
 
 
 def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -390,13 +397,14 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
             ).fetchone()
             customer_id = customer["id"]
         blueprint = _blueprint(conn, tenant["id"], service["id"])
-        first_field = _next_missing(blueprint["fields"], {})
+        fields = _chat_fields(blueprint)
+        first_field = _next_missing(fields, {})
         opening = _opening_message(service)
         if first_field:
             opening += f"\n\n{_field_question(first_field, 0)}"
         request = conn.execute(
             "insert into public.horekia_requests (tenant_id, customer_id, job_type_id, status, intake_data, missing_fields, source) values (%s, %s, %s, 'new', %s, %s, 'chat') returning id, status, intake_data, missing_fields, created_at",
-            (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in blueprint["fields"] if field.get("required")])),
+            (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in fields if field.get("required")])),
         ).fetchone()
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant["id"], request["id"], opening, Jsonb({"service": service["slug"]}), Jsonb({"source": "service_blueprint"})))
         return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field), "intake_data": {}, "status": request["status"]}
@@ -423,9 +431,10 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             return {"request_id": str(request_id), "status": "closed", "reply": "Esta solicitud se ha cerrado porque la ubicación indicada está fuera de nuestro radio de actuación.", "field": None, "intake_data": request["intake_data"]}
         service = conn.execute("select id, name, slug from public.horekia_job_types where tenant_id = %s and id = %s", (tenant_id, request["job_type_id"])).fetchone()
         blueprint = _blueprint(conn, tenant_id, request["job_type_id"])
+        fields = _chat_fields(blueprint)
         intake = dict(request["intake_data"] or {})
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body) values (%s, %s, 'customer', %s)", (tenant_id, request_id, payload.content))
-        field = next((item for item in blueprint["fields"] if item.get("key") == payload.field_key), None) if payload.field_key else _next_missing(blueprint["fields"], intake)
+        field = next((item for item in fields if item.get("key") == payload.field_key), None) if payload.field_key else _next_missing(fields, intake)
         coverage = None
         if field:
             value = _coerce_field(field, payload.content)
@@ -438,7 +447,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 ) or _friendly_retry(field)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake}
-            if field.get("key") == "ubicacion_servicio":
+            if field.get("key") == COVERAGE_FIELD_KEY:
                 profile = conn.execute("select city, display_name from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
                 requested_location = str(value)
                 coverage = check_service_coverage(profile["city"] if profile else None, requested_location)
@@ -474,8 +483,8 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
                     return {"request_id": str(request_id), "status": "closed", "reply": reply, "field": None, "intake_data": intake, "coverage": coverage, "eligible": False}
             intake[field["key"]] = value
-        next_field = _next_missing(blueprint["fields"], intake)
-        missing = [item["key"] for item in blueprint["fields"] if item.get("required") and item["key"] not in intake]
+        next_field = _next_missing(fields, intake)
+        missing = [item["key"] for item in fields if item.get("required") and item["key"] not in intake]
         if next_field:
             numeric_prompt_index = sum(
                 1 for item in blueprint["fields"] if item.get("type") == "number" and item.get("key") in intake

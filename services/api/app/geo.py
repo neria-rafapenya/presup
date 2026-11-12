@@ -6,6 +6,16 @@ import unicodedata
 
 EARTH_RADIUS_KM = 6371.0
 SERVICE_RADIUS_KM = 100.0
+COVERAGE_FIELD_KEY = "ubicacion_servicio"
+COVERAGE_FIELD = {
+    "key": COVERAGE_FIELD_KEY,
+    "label": "Para saber si nuestro ámbito de actuación es viable, ¿dónde deberíamos prestar el servicio?",
+    "type": "text",
+    "required": True,
+    "help_text": "Indica la ciudad o el código postal de la vivienda. Se comprobará si está a menos de 100 km de la ciudad configurada por la empresa.",
+    "example": "Torredembarra",
+    "options": [],
+}
 
 # Coordinates are intentionally kept as application data for this POC. A later
 # production version can replace this registry with a maintained geocoding table.

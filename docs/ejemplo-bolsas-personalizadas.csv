@@ -1,6 +1,5 @@
 service_slug,record_type,code,title,content,type,options,required,unit,example,base_price,currency,priority,rule_kind,definition,expression
 bolsas,service,,Bolsas personalizadas,"Patrón corto de prueba para cerrar un presupuesto de bolsas personalizadas.",,,,,,,,,,,
-bolsas,field,ubicacion_servicio,"¿Dónde deberíamos prestar el servicio?","Indica la ciudad o un código postal de cinco cifras para comprobar el radio de actuación.",text,,true,,Torredembarra,,,,,,
 bolsas,field,bag_type,"¿Qué tipo de bolsa necesitas?","Escoge el formato principal de la bolsa.",choice,tote bag|mochila|saco,true,,tote bag,,,,,,
 bolsas,field,bag_material,"¿Qué material prefieres?","Elige el material de la bolsa.",choice,algodón|lona|rafia,true,,algodón,,,,,,
 bolsas,field,quantity,"¿Cuántas unidades necesitas?","Indica la cantidad total de bolsas.",number,,true,unidad,250,,,,,,

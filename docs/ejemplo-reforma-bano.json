@@ -120,14 +120,6 @@
       "type": "boolean",
       "required": true,
       "example": "sí"
-    },
-    {
-      "key": "ubicacion_servicio",
-      "label": "Para saber si nuestro ámbito de actuación es viable, ¿dónde deberíamos prestar el servicio?",
-      "type": "text",
-      "required": true,
-      "help_text": "Indica la ciudad o el código postal de la vivienda. Se comprobará si está a menos de 100 km de la ciudad configurada por la empresa.",
-      "example": "Torredembarra"
     }
   ],
   "items": [

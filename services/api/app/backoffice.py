@@ -20,6 +20,7 @@ from .config import Settings, get_settings
 from .calculator import CalculationError, calculate_quote
 from .db import POC_TENANT_ID, db_session
 from .documentation import BACKOFFICE_HELP_CONTEXT
+from .geo import COVERAGE_FIELD_KEY
 
 router = APIRouter(prefix="/api/v1/backoffice", tags=["backoffice"])
 logger = logging.getLogger(__name__)
@@ -536,12 +537,13 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
                     "update public.horekia_intake_schemas set status = 'archived' where tenant_id = %s and id = %s",
                     (POC_TENANT_ID, active_schema["id"]),
                 )
+            service_fields = [field for field in payload.fields if field.key != COVERAGE_FIELD_KEY]
             conn.execute(
                 """
                 insert into public.horekia_intake_schemas (tenant_id, job_type_id, version, fields)
                 values (%s, %s, %s, %s)
                 """,
-                (POC_TENANT_ID, job_type_id, next_version, Jsonb([field.model_dump(mode="json", exclude_none=True) for field in payload.fields])),
+                (POC_TENANT_ID, job_type_id, next_version, Jsonb([field.model_dump(mode="json", exclude_none=True) for field in service_fields])),
             )
 
             item_skus = [item.sku for item in payload.items]
@@ -631,7 +633,7 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
                 """,
                 (POC_TENANT_ID,),
             )
-            return {"job_type_id": job_type_id, "version": next_version, "fields": len(payload.fields), "items": len(payload.items), "rules": len(payload.rules), "measures": len(payload.measures)}
+            return {"job_type_id": job_type_id, "version": next_version, "fields": len(service_fields), "items": len(payload.items), "rules": len(payload.rules), "measures": len(payload.measures)}
     except HTTPException:
         raise
     except Exception as exc:

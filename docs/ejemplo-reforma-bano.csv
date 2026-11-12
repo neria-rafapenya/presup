@@ -15,7 +15,6 @@ reforma-de-bano,field,incluye_mampara,¿Quieres incluir una mampara?,,boolean,,t
 reforma-de-bano,field,incluye_mueble_bano,¿Quieres incluir un mueble de baño?,,boolean,,true,,sí,,,,,
 reforma-de-bano,field,tipo_de_griferia,Tipo de grifería,Escoge la calidad de grifería que quieres incluir.,choice,ninguna|estándar|premium,true,,estándar,,,,,
 reforma-de-bano,field,retirada_escombros,¿Quieres incluir retirada de escombros?,,boolean,,true,,sí,,,,,
-reforma-de-bano,field,ubicacion_servicio,"Para saber si nuestro ámbito de actuación es viable, ¿dónde deberíamos prestar el servicio?","Indica la ciudad o el código postal de la vivienda. Se comprobará si está a menos de 100 km de la ciudad configurada por la empresa.",text,,true,,Torredembarra,,,,,
 reforma-de-bano,item,material_suelo_gres,Baldosa de gres para suelo,Material de suelo de gres. Precio ficticio.,, ,false,m²,,22,EUR,,,,
 reforma-de-bano,item,material_suelo_porcelanico,Porcelánico para suelo,Material porcelánico para suelo. Precio ficticio.,, ,false,m²,,29,EUR,,,,
 reforma-de-bano,item,material_suelo_microcemento,Microcemento para suelo,Acabado de microcemento para suelo. Precio ficticio.,, ,false,m²,,42,EUR,,,,
