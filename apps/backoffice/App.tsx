@@ -817,6 +817,9 @@ function Documentation() {
       <DocumentationBullet title="1. Crear el servicio" text="Abre Wizard → Oferta y servicios → Nuevo servicio. Escribe un nombre visible y una descripción. El slug se genera automáticamente y no se edita manualmente." />
       <DocumentationBullet title="2. Abrir el diseñador" text="En la lista de servicios pulsa Diseñar. Se abrirá la ruta propia del servicio y podrás trabajar sin abandonar el contexto del backoffice." />
       <DocumentationBullet title="3. Añadir preguntas" text="En Preguntas añade variables de Texto, Número, Opción, Sí/No o Imagen. Ejemplo: Tipo de reforma, Superficie del suelo, Material del suelo y ¿Hay que retirar azulejos?" />
+      <DocumentationBullet title="Preguntas dependientes" text="Una pregunta de tipo Opción puede depender de otra pregunta anterior. Por ejemplo, si el cliente elige tote bag, Material puede ofrecer algodón, hilo y lana; para mochila, poliéster y algodón; para saco, rafia y algodón. Abre Material, busca Opciones dependientes, selecciona Depende de → Tipo de bolsa y completa las opciones de cada respuesta." />
+      <Text style={styles.documentationCallout}>La dependencia filtra opciones y evita combinaciones incompatibles. No es una regla de precio ni requiere Gemini: el backend la valida de forma determinista. Si la combinación también cambia el importe, añade además las reglas y conceptos facturables correspondientes.</Text>
+      <Text style={styles.codeBlock}>{`{"field":"bag_type","options_by_value":{"tote bag":["algodón","hilo","lana"],"mochila":["poliéster","algodón"],"saco":["rafia","algodón"]}}`}</Text>
       <DocumentationBullet title="4. Añadir conceptos" text="En Catálogo añade los materiales, productos, mano de obra y extras que pueden aparecer en el presupuesto. Define unidad y precio base para cada concepto." />
       <DocumentationBullet title="5. Añadir reglas" text="En Reglas crea mínimos, descuentos, recargos o fórmulas. Asocia cada regla con el campo de referencia y el concepto facturable correspondiente." />
       <DocumentationBullet title="6. Guardar cada bloque" text="Cada pregunta, concepto y regla tiene su propio botón Guardar. El guardado conserva la modal abierta para poder continuar configurando." />
@@ -833,7 +836,7 @@ Catálogo:
 
 Regla:
 - floor_material_by_area = superficie_suelo × precio de Baldosa gres Brooklyn`}</Text>
-      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code.</Text>
+      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code. Para una pregunta dependiente añade la columna depends_on con un JSON que incluya field y options_by_value. En una importación completa, usa Reemplazar el patrón completo para retirar preguntas antiguas o duplicadas.</Text>
     </DocumentationDocumentSection>
   </View>;
 }

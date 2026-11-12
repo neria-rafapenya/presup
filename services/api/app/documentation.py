@@ -46,6 +46,22 @@ CSV de patrón de servicio:
   para que sus opciones dependan de una respuesta anterior. Por ejemplo, material puede
   ofrecer opciones distintas según bag_type. El Diseñador permite configurarlo sin escribir
   el JSON.
+- Una dependencia no es una regla de precio. Sirve para filtrar las opciones que verá el
+  cliente y para impedir combinaciones incompatibles. La pregunta controladora debe ser
+  anterior y también debe ser de tipo choice.
+- Ejemplo: bag_type puede tener mochila, tote bag y saco; bag_material puede depender de
+  bag_type. tote bag admite algodón, hilo y lana; mochila admite poliéster y algodón; saco
+  admite rafia y algodón.
+- En el Diseñador, abre la pregunta de material, busca Opciones dependientes, selecciona
+  Depende de → Tipo de bolsa y escribe las opciones válidas separadas por comas para cada
+  respuesta. Guarda la pregunta. No hace falta crear una regla determinista para filtrar.
+- En un CSV de patrón de servicio, la columna depends_on contiene un JSON como:
+  {"field":"bag_type","options_by_value":{"tote bag":["algodón","hilo","lana"],"mochila":["poliéster","algodón"],"saco":["rafia","algodón"]}}
+- La columna options del field dependiente debe contener la unión de todas las opciones.
+  El backend entrega al chat solo las opciones correspondientes a la respuesta anterior y
+  rechaza una opción incompatible escrita manualmente.
+- Las reglas kind formula, unit_price, surcharge, factor y minimum siguen siendo necesarias
+  aparte cuando la combinación válida debe cambiar el precio o añadir una línea de catálogo.
 
 Regla de cálculo:
 - Gemini interpreta la petición y formula preguntas.
@@ -66,6 +82,9 @@ Guía de Servicios:
   Catálogo, Reglas y Medidas.
 - En Preguntas se añaden Texto, Número, Opción, Sí/No o Imagen. En una reforma de baño son
   ejemplos Tipo de reforma, Superficie del suelo, Material del suelo y Retirada de azulejos.
+- Las preguntas de tipo Opción pueden ser dependientes. Por ejemplo, después de preguntar
+  Tipo de bolsa, la pregunta Material puede mostrar algodón, hilo y lana para una tote bag,
+  poliéster y algodón para una mochila, o rafia y algodón para un saco.
 - En Catálogo se añaden materiales, productos, mano de obra y extras con unidad y precio base.
 - En Reglas se configuran mínimos, descuentos, recargos y fórmulas deterministas. Ejemplo:
   floor_material_by_area calcula superficie_suelo por precio del material de suelo.
