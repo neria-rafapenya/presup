@@ -624,6 +624,7 @@ function Documentation() {
     "Ejemplo de documentación y políticas",
     "Cómo redactar entradas útiles",
     "Proceso recomendado de carga y validación",
+    "Servicios: creación y diseño",
   ];
   return <View>
     <View style={styles.panel}>
@@ -703,6 +704,30 @@ function Documentation() {
       <DocumentationBullet title="5. Configurar el servicio" text="Crear las preguntas, productos y reglas del servicio en Diseñador de servicios." />
       <DocumentationBullet title="6. Probar" text="Enviar peticiones de ejemplo al chat y confirmar que Gemini pregunta lo necesario y que el importe lo calcula el motor determinista." />
       <Text style={styles.documentationCallout}>La importación actual es por CSV. La carga directa de PDF o DOC todavía no está habilitada en la POC.</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="9" title="Servicios: creación y diseño">
+      <Text style={styles.documentationText}>Un servicio representa una línea de trabajo que el tenant quiere presupuestar. Una empresa de reformas puede crear Reforma de baño, Reforma de cocina y Reforma integral como servicios independientes.</Text>
+      <DocumentationBullet title="1. Crear el servicio" text="Abre Wizard → Oferta y servicios → Nuevo servicio. Escribe un nombre visible y una descripción. El slug se genera automáticamente y no se edita manualmente." />
+      <DocumentationBullet title="2. Abrir el diseñador" text="En la lista de servicios pulsa Diseñar. Se abrirá la ruta propia del servicio y podrás trabajar sin abandonar el contexto del backoffice." />
+      <DocumentationBullet title="3. Añadir preguntas" text="En Preguntas añade variables de Texto, Número, Opción, Sí/No o Imagen. Ejemplo: Tipo de reforma, Superficie del suelo, Material del suelo y ¿Hay que retirar azulejos?" />
+      <DocumentationBullet title="4. Añadir conceptos" text="En Catálogo añade los materiales, productos, mano de obra y extras que pueden aparecer en el presupuesto. Define unidad y precio base para cada concepto." />
+      <DocumentationBullet title="5. Añadir reglas" text="En Reglas crea mínimos, descuentos, recargos o fórmulas. Asocia cada regla con el campo de referencia y el concepto facturable correspondiente." />
+      <DocumentationBullet title="6. Guardar cada bloque" text="Cada pregunta, concepto y regla tiene su propio botón Guardar. El guardado conserva la modal abierta para poder continuar configurando." />
+      <Text style={styles.documentationText}>Ejemplo manual para una reforma de baño:</Text>
+      <Text style={styles.codeBlock}>{`Preguntas:
+- Superficie del suelo · Número · m² · obligatorio
+- Material del suelo · Opción · baldosa gres | porcelánico | microcemento
+- ¿Hay que retirar azulejos? · Sí/No · obligatorio
+
+Catálogo:
+- Baldosa gres Brooklyn · m² · 22 EUR
+- Mano de obra general · hora · 32 EUR
+- Retirada de azulejos · m² · 12 EUR
+
+Regla:
+- floor_material_by_area = superficie_suelo × precio de Baldosa gres Brooklyn`}</Text>
+      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code.</Text>
     </DocumentationSection>
   </View>;
 }
