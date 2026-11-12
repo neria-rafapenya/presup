@@ -2,6 +2,8 @@
 
 Base FastAPI con configuración validada desde `.env`. La POC usa Supabase real y deja Gemini configurado para uso real; sus datos de negocio son ficticios. El backoffice actual no invoca Gemini todavía porque su alcance es configuración y catálogo.
 
+Los presupuestos se envían por Resend como PDF adjunto. Configura `RESEND_API_KEY`, `RESEND_FROM_EMAIL` y, opcionalmente, `RESEND_FROM_NAME` en `.env`; el remitente debe pertenecer a un dominio verificado en Resend.
+
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate

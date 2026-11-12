@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
 from .db import POC_TENANT_ID, db_session
+from .email import EmailDeliveryError, send_quote_email
 from .geo import CITY_COORDINATES, COVERAGE_FIELD, COVERAGE_FIELD_KEY, check_service_coverage
+from .pdf import build_quote_pdf
 
 router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
@@ -422,6 +424,87 @@ def _quote_response(quote: dict[str, Any], calculation: dict[str, Any]) -> dict[
     return {"id": str(quote["id"]), "status": quote["status"], "currency": quote["currency"], "subtotal": str(quote["subtotal"]), "tax_amount": str(quote["tax_amount"]), "total": str(quote["total"]), "lines": calculation["lines"]}
 
 
+def _deliver_quote_email(
+    conn: Any,
+    *,
+    settings: Settings,
+    tenant_id: UUID,
+    request_id: UUID,
+    quote: dict[str, Any],
+    calculation: dict[str, Any],
+    service: dict[str, Any],
+) -> tuple[bool, str | None]:
+    customer = conn.execute(
+        "select id, name, email from public.horekia_customers c join public.horekia_requests r on r.tenant_id = c.tenant_id and r.customer_id = c.id where r.tenant_id = %s and r.id = %s",
+        (tenant_id, request_id),
+    ).fetchone()
+    if not customer or not customer["email"]:
+        return False, "La solicitud no tiene un email de destino"
+    existing = conn.execute(
+        "select status, provider_message_id from public.horekia_quote_deliveries where tenant_id = %s and quote_id = %s and recipient_email = %s",
+        (tenant_id, quote["id"], customer["email"]),
+    ).fetchone()
+    if existing and existing["status"] == "sent":
+        return True, existing["provider_message_id"]
+    delivery = conn.execute(
+        """
+        insert into public.horekia_quote_deliveries
+          (tenant_id, quote_id, request_id, recipient_email, status, attempts, error_message)
+        values (%s, %s, %s, %s, 'pending', 1, null)
+        on conflict (tenant_id, quote_id, recipient_email) do update
+          set status = 'pending', attempts = public.horekia_quote_deliveries.attempts + 1,
+              error_message = null, updated_at = now()
+        returning id
+        """,
+        (tenant_id, quote["id"], request_id, customer["email"]),
+    ).fetchone()
+    profile = conn.execute(
+        "select display_name, legal_name, quotes_email, address_line1, postal_code, city, disclaimers, warranty_terms, quote_template_document_id from public.horekia_tenant_profiles where tenant_id = %s",
+        (tenant_id,),
+    ).fetchone() or {}
+    template = None
+    if profile.get("quote_template_document_id"):
+        document = conn.execute(
+            "select content from public.horekia_tenant_documents where tenant_id = %s and id = %s",
+            (tenant_id, profile["quote_template_document_id"]),
+        ).fetchone()
+        template = document["content"] if document else None
+    tenant_name = profile.get("display_name") or profile.get("legal_name") or "HorekIA"
+    try:
+        pdf_content = build_quote_pdf(
+            tenant=profile,
+            customer=customer,
+            service=service,
+            quote=quote,
+            calculation=calculation,
+            template_content=template,
+        )
+        message_id = send_quote_email(
+            settings=settings,
+            recipient=customer["email"],
+            recipient_name=customer.get("name"),
+            subject=f"{tenant_name} · Presupuesto de {service['name']}",
+            tenant_name=tenant_name,
+            service_name=service["name"],
+            total=f"{Decimal(str(quote['total'])):.2f}".replace(".", ","),
+            currency=quote["currency"],
+            pdf_content=pdf_content,
+            pdf_filename=f"presupuesto-{service['slug']}-{str(quote['id'])[:8]}.pdf",
+            reply_to=profile.get("quotes_email"),
+        )
+    except (EmailDeliveryError, ValueError, ImportError) as exc:
+        conn.execute(
+            "update public.horekia_quote_deliveries set status = 'failed', error_message = %s, updated_at = now() where tenant_id = %s and id = %s",
+            (str(exc)[:1000], tenant_id, delivery["id"]),
+        )
+        return False, str(exc)
+    conn.execute(
+        "update public.horekia_quote_deliveries set status = 'sent', provider_message_id = %s, sent_at = now(), updated_at = now() where tenant_id = %s and id = %s",
+        (message_id, tenant_id, delivery["id"]),
+    )
+    return True, message_id
+
+
 def _create_quote(conn: Any, tenant_id: UUID, request_id: UUID, job_type_id: UUID, blueprint: dict[str, Any], intake: dict[str, Any], settings: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     calculation = calculate_quote(fields=blueprint["fields"], items=blueprint["items"], rules=blueprint["rules"], measures=blueprint["measures"], intake=intake, tax_rate=settings["tax_rate"], currency=settings["currency"])
     snapshot = _jsonable(blueprint)
@@ -497,7 +580,7 @@ def complete_customer_account(request_id: UUID, payload: CustomerAccountComplete
         raise HTTPException(status_code=422, detail="Las contraseñas no coinciden")
     with db_session(settings) as conn:
         request = conn.execute(
-            "select id, customer_id, status from public.horekia_requests where tenant_id = %s and id = %s",
+            "select id, customer_id, job_type_id, status from public.horekia_requests where tenant_id = %s and id = %s",
             (POC_TENANT_ID, request_id),
         ).fetchone()
         if not request:
@@ -523,11 +606,26 @@ def complete_customer_account(request_id: UUID, payload: CustomerAccountComplete
         ).fetchone()
         if not quote:
             raise HTTPException(status_code=409, detail="No se ha encontrado el presupuesto preparado")
+        service = conn.execute(
+            "select id, name, slug from public.horekia_job_types where tenant_id = %s and id = %s",
+            (POC_TENANT_ID, request["job_type_id"]),
+        ).fetchone()
+        email_sent, email_error = _deliver_quote_email(
+            conn,
+            settings=settings,
+            tenant_id=POC_TENANT_ID,
+            request_id=request_id,
+            quote=quote,
+            calculation=quote["calculation_snapshot"] or {"lines": []},
+            service=service or {"name": "tu servicio", "slug": "presupuesto"},
+        )
+        if not email_sent:
+            raise HTTPException(status_code=503, detail=f"La cuenta no se ha podido activar porque el presupuesto no se ha enviado: {email_error}")
         return {
             "status": "authenticated",
             "session_token": token,
             "customer": {"id": str(customer["id"]), "name": customer["name"], "email": customer["email"]},
-            "quote": _quote_response(quote, quote["calculation_snapshot"] or {"lines": []}),
+            "email_sent": True,
         }
 
 
@@ -633,12 +731,29 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'needs_review', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "calculator", "error": str(exc)})))
             return {"request_id": str(request_id), "status": "needs_review", "reply": reply, "field": None, "intake_data": intake}
-        reply = f"He preparado tu solicitud de presupuesto de {service['name']}. Para consultar el importe y acceder al presupuesto, solo falta crear una contraseña para tu cuenta."
+        email_sent = False
+        email_error = None
+        if authenticated_customer:
+            email_sent, email_error = _deliver_quote_email(
+                conn,
+                settings=settings,
+                tenant_id=tenant_id,
+                request_id=request_id,
+                quote=quote,
+                calculation=calculation,
+                service=service,
+            )
+            if email_sent:
+                reply = f"He preparado tu presupuesto de {service['name']} y te lo he enviado por email."
+            else:
+                reply = f"He preparado tu presupuesto de {service['name']}, pero no he podido enviarlo por email todavía. La empresa debe revisar la configuración de correo antes de poder enviártelo."
+        else:
+            reply = f"He preparado tu solicitud de presupuesto de {service['name']}. Para recibirla por email, solo falta crear una contraseña para tu cuenta."
         conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"quote_id": str(quote["id"]), "calculation": calculation}), Jsonb({"source": "calculator"})))
         response = {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake}
         if authenticated_customer:
-            response["quote"] = _quote_response(quote, calculation)
+            response["email_sent"] = email_sent
         else:
             response["quote_available"] = True
             response["quote_id"] = str(quote["id"])

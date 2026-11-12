@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="", validation_alias="GEMINI_MODEL")
     gemini_embedding_model: str = Field(default="", validation_alias="GEMINI_EMBEDDING_MODEL")
+    resend_api_key: str = Field(default="", validation_alias="RESEND_API_KEY")
+    resend_from_email: str = Field(default="", validation_alias="RESEND_FROM_EMAIL")
+    resend_from_name: str = Field(default="Horekia", validation_alias="RESEND_FROM_NAME")
 
     @model_validator(mode="after")
     def validate_runtime_contract(self) -> "Settings":
@@ -35,10 +38,14 @@ class Settings(BaseSettings):
     def database_configured(self) -> bool:
         return bool(self.database_url)
 
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.resend_api_key and self.resend_from_email)
+
     def public_summary(self) -> dict[str, bool]:
         """Return non-sensitive state suitable for diagnostics and tests."""
 
-        return {"ai_mock": self.ai_mock, "database_configured": self.database_configured}
+        return {"ai_mock": self.ai_mock, "database_configured": self.database_configured, "email_configured": self.email_configured}
 
 
 @lru_cache
