@@ -127,6 +127,8 @@ def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
                 subject = f"la {label}"
             return f"{prefix}, ¿cuántos {unit} tiene {subject}?"
         return f"{prefix}, ¿qué cantidad de {label} necesitas?"
+    if field.get("type") == "boolean":
+        return field["label"].rstrip(".")
     question = field["label"]
     if field.get("unit"):
         question += f" [{field['unit']}]"
@@ -164,6 +166,18 @@ def _friendly_retry(field: dict[str, Any]) -> str:
     if field.get("type") == "boolean":
         return f"Gracias. Para continuar, ¿{label}? Responde sí o no."
     return f"Gracias. Para continuar necesito que me indiques {label}."
+
+
+def _public_field(field: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not field:
+        return None
+    return {
+        "key": field.get("key"),
+        "label": field.get("label"),
+        "type": field.get("type"),
+        "unit": field.get("unit"),
+        "options": field.get("options", []),
+    }
 
 
 def _ask_gemini_public(
@@ -330,7 +344,7 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
             (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in blueprint["fields"] if field.get("required")])),
         ).fetchone()
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant["id"], request["id"], opening, Jsonb({"service": service["slug"]}), Jsonb({"source": "service_blueprint"})))
-        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "intake_data": {}, "status": request["status"]}
+        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field), "intake_data": {}, "status": request["status"]}
 
 
 @router.get("/conversations/{request_id}")
@@ -365,7 +379,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     settings=settings,
                 ) or _friendly_retry(field)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
-                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "intake_data": intake}
+                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake}
             intake[field["key"]] = value
         next_field = _next_missing(blueprint["fields"], intake)
         missing = [item["key"] for item in blueprint["fields"] if item.get("required") and item["key"] not in intake]
@@ -376,7 +390,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             reply = _field_question(next_field, numeric_prompt_index)
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb(missing), tenant_id, request_id))
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"field": next_field["key"]}), Jsonb({"source": "service_blueprint"})))
-            return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "intake_data": intake}
+            return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field), "intake_data": intake}
         try:
             tenant_settings = conn.execute("select currency, tax_rate, configuration_version from public.horekia_tenant_settings where tenant_id = %s", (tenant_id,)).fetchone()
             quote, calculation = _create_quote(conn, tenant_id, request_id, service["id"], blueprint, intake, tenant_settings)
@@ -384,8 +398,8 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             reply = f"Necesito revisar un dato antes de calcular: {exc}"
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'needs_review', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "calculator", "error": str(exc)})))
-            return {"request_id": str(request_id), "status": "needs_review", "reply": reply, "intake_data": intake}
+            return {"request_id": str(request_id), "status": "needs_review", "reply": reply, "field": None, "intake_data": intake}
         reply = f"He preparado una solicitud de presupuesto de {service['name']}. Total orientativo: {calculation['total']} {calculation['currency']}. Queda pendiente de revisión."
         conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"quote_id": str(quote["id"]), "calculation": calculation}), Jsonb({"source": "calculator"})))
-        return {"request_id": str(request_id), "status": "quoted", "reply": reply, "intake_data": intake, "quote": _quote_response(quote, calculation)}
+        return {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake, "quote": _quote_response(quote, calculation)}
