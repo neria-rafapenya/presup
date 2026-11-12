@@ -10,22 +10,62 @@ SERVICE_RADIUS_KM = 100.0
 # Coordinates are intentionally kept as application data for this POC. A later
 # production version can replace this registry with a maintained geocoding table.
 CITY_COORDINATES: dict[str, tuple[float, float]] = {
+    "alicante": (38.3452, -0.4810),
+    "almeria": (36.8340, -2.4637),
+    "avila": (40.6567, -4.6817),
     "barcelona": (41.3874, 2.1686),
+    "bilbao": (43.2630, -2.9350),
+    "burgos": (42.3439, -3.6969),
+    "caceres": (39.4753, -6.3724),
+    "cadiz": (36.5271, -6.2886),
     "calafell": (41.1998, 1.5683),
     "cambrils": (41.0697, 1.0597),
     "castellon de la plana": (39.9864, -0.0513),
+    "cordoba": (37.8882, -4.7794),
+    "cuenca": (40.0704, -2.1374),
     "girona": (41.9794, 2.8214),
+    "granada": (37.1773, -3.5986),
+    "huelva": (37.2614, -6.9447),
+    "jaen": (37.7796, -3.7849),
+    "la coruna": (43.3623, -8.4115),
+    "leon": (42.5987, -5.5671),
     "lleida": (41.6176, 0.6200),
     "madrid": (40.4168, -3.7038),
+    "malaga": (36.7213, -4.4214),
+    "murcia": (37.9922, -1.1307),
+    "ourense": (42.3358, -7.8639),
+    "oviedo": (43.3619, -5.8494),
+    "pamplona": (42.8125, -1.6458),
     "reus": (41.1540, 1.1087),
     "salou": (41.0760, 1.1416),
+    "salamanca": (40.9701, -5.6635),
+    "santander": (43.4623, -3.8099),
+    "santiago de compostela": (42.8782, -8.5448),
+    "segovia": (40.9429, -4.1088),
+    "sevilla": (37.3891, -5.9845),
+    "soria": (41.7636, -2.4649),
     "tarragona": (41.1189, 1.2445),
     "torredembarra": (41.1451, 1.3970),
     "valencia": (39.4699, -0.3763),
     "el vendrell": (41.2157, 1.5343),
     "vila-seca": (41.1112, 1.1467),
     "vilanova i la geltru": (41.2239, 1.7251),
+    "valladolid": (41.6523, -4.7245),
+    "vigo": (42.2406, -8.7207),
     "zaragoza": (41.6488, -0.8891),
+}
+
+LOCATION_ALIASES: dict[str, str] = {
+    "barna": "barcelona",
+    "barcelona capital": "barcelona",
+    "castellon": "castellon de la plana",
+    "castellon capital": "castellon de la plana",
+    "coruna": "la coruna",
+    "la coruna capital": "la coruna",
+    "madrid capital": "madrid",
+    "tarragona capital": "tarragona",
+    "valencia capital": "valencia",
+    "zaragoza capital": "zaragoza",
 }
 
 POSTAL_PREFIX_COORDINATES: dict[str, tuple[float, float]] = {
@@ -41,7 +81,10 @@ POSTAL_PREFIX_COORDINATES: dict[str, tuple[float, float]] = {
 
 def normalize_location(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value.lower().strip())
-    return "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+    normalized = "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+    normalized = re.sub(r"\b(codigo postal|c\.?p\.?|cp|provincia de|provincia)\b", " ", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return " ".join(normalized.split())
 
 
 def coordinates_for_location(value: str) -> tuple[float, float] | None:
@@ -49,6 +92,7 @@ def coordinates_for_location(value: str) -> tuple[float, float] | None:
     if postal_code:
         return POSTAL_PREFIX_COORDINATES.get(postal_code.group(1)[:2])
     normalized = normalize_location(value)
+    normalized = LOCATION_ALIASES.get(normalized, normalized)
     if normalized in CITY_COORDINATES:
         return CITY_COORDINATES[normalized]
     matches = [coordinates for city, coordinates in CITY_COORDINATES.items() if city in normalized or normalized in city]

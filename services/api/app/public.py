@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
 from .db import POC_TENANT_ID, db_session
-from .geo import check_service_coverage
+from .geo import CITY_COORDINATES, check_service_coverage
 
 router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
@@ -183,6 +183,56 @@ def _public_field(field: dict[str, Any] | None) -> dict[str, Any] | None:
         "unit": field.get("unit"),
         "options": field.get("options", []),
     }
+
+
+def _normalize_location_with_gemini(user_location: str, settings: Settings) -> str | None:
+    """Normalize a location spelling; Gemini never supplies coordinates or distance."""
+
+    if settings.ai_mock or not settings.gemini_api_key:
+        return None
+    model = settings.gemini_model.removeprefix("models/")
+    system = (
+        "Eres un normalizador de ubicaciones para una aplicación de presupuestos en España. "
+        "Corrige errores ortográficos y elimina contexto innecesario como 'capital', provincia o país. "
+        "No calcules distancias, no inventes coordenadas y no decidas si una ubicación está dentro de un radio. "
+        "Devuelve únicamente un JSON válido con la propiedad location. Si no puedes identificar una ciudad "
+        "o un código postal de cinco cifras presente en el mensaje, usa null."
+    )
+    prompt = json.dumps(
+        {
+            "ubicacion_escrita_por_cliente": user_location,
+            "ciudades_conocidas_por_la_aplicacion": sorted(CITY_COORDINATES),
+        },
+        ensure_ascii=False,
+    )
+    payload = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 80, "responseMimeType": "application/json"},
+    }
+    request = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key},
+        method="POST",
+    )
+    try:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(request, timeout=8, context=ssl_context) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    raw = "\n".join(part.get("text", "") for part in parts if part.get("text")).strip()
+    if not raw:
+        return None
+    try:
+        normalized = json.loads(raw).get("location")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(normalized, str) or not normalized.strip():
+        return None
+    return normalized.strip()
 
 
 def _ask_gemini_public(
@@ -390,7 +440,17 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field), "intake_data": intake}
             if field.get("key") == "ubicacion_servicio":
                 profile = conn.execute("select city from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
-                coverage = check_service_coverage(profile["city"] if profile else None, str(value))
+                requested_location = str(value)
+                coverage = check_service_coverage(profile["city"] if profile else None, requested_location)
+                if coverage.get("reason") == "location_not_found":
+                    normalized_location = _normalize_location_with_gemini(requested_location, settings)
+                    if normalized_location:
+                        normalized_coverage = check_service_coverage(profile["city"] if profile else None, normalized_location)
+                        if normalized_coverage["status"] != "unavailable":
+                            normalized_coverage["destination_input"] = requested_location
+                            normalized_coverage["destination_normalized"] = normalized_location
+                            normalized_coverage["resolved_by"] = "gemini"
+                            coverage = normalized_coverage
                 if coverage["status"] == "unavailable":
                     if coverage["reason"] == "origin_not_configured":
                         reply = "Todavía no puedo validar el radio de actuación porque la ciudad de la empresa no está configurada en sus datos."

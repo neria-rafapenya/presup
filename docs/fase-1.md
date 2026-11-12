@@ -56,6 +56,7 @@ Fase 1 queda cerrada para el alcance de esta POC:
 - Lecturas propias permitidas, lecturas cruzadas denegadas y escrituras cruzadas denegadas por RLS.
 - API, backoffice Web y chat Web arrancados y verificados por HTTP.
 - Flujo público probado contra Supabase: selección de servicio, conversación, captura de campos, petición y presupuesto `needs_review`.
+- La cobertura geográfica se valida como primera pregunta del chat: la API compara la ciudad o código postal indicado con la ciudad del tenant usando un cálculo determinista de 100 km. Gemini solo normaliza erratas o expresiones de ubicación cuando el registro local no basta; nunca calcula la distancia ni decide la viabilidad.
 - Flujo interno probado: bandeja de peticiones, detalle con mensajes, revisión y cambio de estado de presupuesto.
 - El asistente flotante de documentación sigue siendo un módulo independiente del chatbot público; usa el contexto controlado de documentación y Gemini.
 
