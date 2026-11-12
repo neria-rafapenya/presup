@@ -435,8 +435,7 @@ export default function App() {
         <Text style={styles.brand}>HOREKIA</Text>
         <Text style={styles.brandSub}>BACKOFFICE</Text>
         <View style={styles.nav}>
-          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
-          <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
+          <NavButton label="Dashboard" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
           <Text style={[styles.navGroupLabel, (screen === "designer" || screen === "knowledge") && styles.navGroupLabelActive]}>Servicios y fichas</Text>
           <View style={styles.subnav}>
@@ -448,6 +447,7 @@ export default function App() {
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
         </View>
         <View style={styles.sidebarBottom}>
+          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
           <Text style={styles.sidebarHint}>Instalación POC</Text>
           <Text style={styles.sidebarMuted}>{summary?.tenant.name ?? "Cargando empresa…"}</Text>
         </View>
@@ -1593,7 +1593,7 @@ function ModulePlaceholder({ title, text }: { title: string; text: string }) {
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Dashboard", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
