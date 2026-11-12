@@ -94,6 +94,15 @@ def _field_question(field: dict[str, Any]) -> str:
     return question + "."
 
 
+def _opening_message(service: dict[str, Any]) -> str:
+    service_name = service["name"].strip().lower()
+    if service_name.startswith("reforma de "):
+        need = f"Necesitas reformar tu {service_name.removeprefix('reforma de ')}."
+    else:
+        need = f"Necesitas un presupuesto de {service_name}."
+    return f"{need} Necesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
+
+
 def _friendly_retry(field: dict[str, Any]) -> str:
     label = field["label"].lower()
     if field.get("type") == "choice" and field.get("options"):
@@ -209,7 +218,7 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
             customer_id = customer["id"]
         blueprint = _blueprint(conn, tenant["id"], service["id"])
         first_field = _next_missing(blueprint["fields"], {})
-        opening = f"Vamos a preparar tu presupuesto de {service['name']}."
+        opening = _opening_message(service)
         if first_field:
             opening += f" {_field_question(first_field)}"
         request = conn.execute(
