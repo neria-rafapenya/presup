@@ -61,6 +61,7 @@ type BlueprintItem = { sku: string; name: string; description?: string; unit: st
 type CatalogAttribute = { label: string; value: string };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
+type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
 type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "cleaning" | "gardening" | "photography" | "transport" | "it_support" | "consulting" | "training" | "maintenance";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -350,6 +351,42 @@ export default function App() {
     }
   };
 
+  const importServiceDefinition = async (payload: ServiceImportData) => {
+    setSaving(true);
+    setError(null);
+    try {
+      let service = services.find((currentService) => currentService.slug === payload.serviceSlug);
+      if (!service) {
+        if (!payload.serviceName?.trim()) throw new Error("SERVICE_NAME_REQUIRED");
+        service = await api<JobType>("/api/v1/backoffice/job-types", {
+          method: "POST",
+          body: JSON.stringify({ slug: payload.serviceSlug, name: payload.serviceName.trim(), description: payload.serviceDescription?.trim() || null }),
+        });
+      }
+      const current = await api<ServiceBlueprint>(`/api/v1/backoffice/job-types/${service.id}/blueprint`);
+      const fields = new Map((current.fields ?? []).map((field) => [field.key, field]));
+      payload.fields.forEach((field) => fields.set(field.key, field));
+      const items = new Map((current.items ?? []).map((item) => [item.sku, item]));
+      payload.items.forEach((item) => items.set(item.sku, item));
+      const rules = new Map((current.rules ?? []).map((rule) => [rule.code, rule]));
+      payload.rules.forEach((rule) => rules.set(rule.code, rule));
+      const measures = new Map((current.measures ?? []).map((measure) => [measure.code, measure]));
+      payload.measures.forEach((measure) => measures.set(measure.code, measure));
+      await api(`/api/v1/backoffice/job-types/${service.id}/blueprint`, {
+        method: "PUT",
+        body: JSON.stringify({ fields: [...fields.values()], items: [...items.values()], rules: [...rules.values()], measures: [...measures.values()] }),
+      });
+      await load();
+      return true;
+    } catch (caughtError) {
+      const message = caughtError instanceof Error && caughtError.message === "SERVICE_NAME_REQUIRED" ? "Para crear un servicio nuevo, el CSV debe incluir una fila service con su nombre en title." : "No se ha podido importar el patrón de servicio. Revisa los códigos y el JSON de las reglas.";
+      setError(message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const loadBlueprint = async (jobTypeId: string) => {
     try {
       return await api<ServiceBlueprint>(`/api/v1/backoffice/job-types/${jobTypeId}/blueprint`);
@@ -438,14 +475,14 @@ export default function App() {
           ) : summary && profile ? (
             <>
               {screen === "wizard" ? (
-                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} onUpdateKnowledgeEntry={updateKnowledgeEntry} onDeleteKnowledgeEntry={deleteKnowledgeEntry} saving={saving} />
+                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} onUpdateKnowledgeEntry={updateKnowledgeEntry} onDeleteKnowledgeEntry={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
                 <Company summary={summary} setSummary={setSummary} profile={profile} setProfile={setProfile} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onSave={saveSettings} saving={saving} />
               ) : null}
               {screen === "knowledge" ? (
-                <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} saving={saving} />
+                <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
               {screen === "documentation" ? <Documentation /> : null}
               {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
@@ -486,7 +523,7 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, onUpdateKnowledgeEntry, onDeleteKnowledgeEntry, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdateKnowledgeEntry: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDeleteKnowledgeEntry: (entryId: string) => Promise<boolean>; saving: boolean }) {
+function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, onUpdateKnowledgeEntry, onDeleteKnowledgeEntry, onImportService, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdateKnowledgeEntry: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDeleteKnowledgeEntry: (entryId: string) => Promise<boolean>; onImportService: (payload: ServiceImportData) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(initialStep);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
@@ -512,7 +549,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <Services services={services} onCreate={onCreateService} onDelete={onDeleteService} onDesignService={onDesignService} saving={saving} embedded />
         ) : null}
         {step === 2 ? (
-          <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImportKnowledge} onUpdate={onUpdateKnowledgeEntry} onDelete={onDeleteKnowledgeEntry} saving={saving} embedded />
+          <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={onImportKnowledge} onUpdate={onUpdateKnowledgeEntry} onDelete={onDeleteKnowledgeEntry} onImportService={onImportService} saving={saving} embedded />
         ) : null}
         {step === 3 ? (
           <>
@@ -576,6 +613,8 @@ function Documentation() {
       <Text style={styles.codeBlock}>kind,title,content,code,category,unit,base_price,currency</Text>
       <Text style={styles.documentationText}>Valores admitidos para kind: product, category, sales_pattern, policy, faq, document y other. Las columnas adicionales se conservan como metadatos.</Text>
       <Text style={styles.documentationText}>Para productos se recomienda completar code, category, unit, base_price y currency. El precio debe ser numérico, sin el símbolo de moneda.</Text>
+      <Text style={styles.documentationText}>Para crear o ampliar un servicio usa el bloque Importar patrón de servicio. Ese CSV utiliza service_slug y record_type con valores service, field, item, rule o measure. Las filas se fusionan por code con el patrón existente.</Text>
+      <Text style={styles.codeBlock}>service_slug,record_type,code,title,content,type,options,required,unit,base_price,currency,priority,definition</Text>
     </DocumentationSection>
 
     <DocumentationSection number="5" title="Ejemplo de producto">
@@ -620,16 +659,16 @@ function DocumentationBullet({ title, text }: { title: string; text: string }) {
   return <View style={styles.documentationBullet}><Text style={styles.documentationBulletTitle}>{title}</Text><Text style={styles.documentationText}>{text}</Text></View>;
 }
 
-type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdate: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDelete: (entryId: string) => Promise<boolean>; saving: boolean };
+type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; services: JobType[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdate: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDelete: (entryId: string) => Promise<boolean>; onImportService: (payload: ServiceImportData) => Promise<boolean>; saving: boolean };
 
-function KnowledgePage({ knowledgeSummary, knowledgeEntries, onImport, onUpdate, onDelete, saving, embedded = false }: KnowledgeImportProps & { embedded?: boolean }) {
-  const content = <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImport} saving={saving} />;
+function KnowledgePage({ knowledgeSummary, knowledgeEntries, services, onImport, onUpdate, onDelete, onImportService, saving, embedded = false }: KnowledgeImportProps & { embedded?: boolean }) {
+  const content = <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={onImport} onImportService={onImportService} saving={saving} />;
   const table = <KnowledgeTable entries={knowledgeEntries} onUpdate={onUpdate} onDelete={onDelete} saving={saving} />;
   if (embedded) return <View><Text style={styles.panelTitle}>3. Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}{table}</View>;
   return <View><View style={styles.panel}><Text style={styles.panelTitle}>Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View>{table}</View>;
 }
 
-function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: Pick<KnowledgeImportProps, "knowledgeSummary" | "knowledgeEntries" | "onImport" | "saving">) {
+function KnowledgeImport({ knowledgeSummary, knowledgeEntries, services, onImport, onImportService, saving }: Pick<KnowledgeImportProps, "knowledgeSummary" | "knowledgeEntries" | "services" | "onImport" | "onImportService" | "saving">) {
   const [sourceName, setSourceName] = useState("");
   const [rows, setRows] = useState<KnowledgeRow[]>([]);
 
@@ -660,8 +699,53 @@ function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving 
       {rows.length > 0 ? <Text style={styles.wizardText}>{rows.length} fila(s) listas para importar.</Text> : null}
       <Pressable style={styles.primaryButton} onPress={importRows} disabled={saving || rows.length === 0}><Text style={styles.primaryLabel}>{saving ? "Importando…" : "Importar conocimiento"}</Text></Pressable>
       <Text style={styles.knowledgeCount}>Base actual: {knowledgeSummary.total} entradas · {knowledgeEntries.slice(0, 3).map((entry) => entry.title).join(", ") || "sin entradas"}</Text>
+      <ServiceCsvImport services={services} onImport={onImportService} saving={saving} />
     </View>
   );
+}
+
+function ServiceCsvImport({ services, onImport, saving }: { services: JobType[]; onImport: (payload: ServiceImportData) => Promise<boolean>; saving: boolean }) {
+  const [sourceName, setSourceName] = useState("");
+  const [payload, setPayload] = useState<ServiceImportData | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  const chooseCsv = () => {
+    if (typeof document === "undefined") return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setSourceName(file.name);
+      const parsed = parseServiceCsv(await file.text());
+      setPayload(parsed.data ?? null);
+      setParseError(parsed.error ?? null);
+    };
+    input.click();
+  };
+
+  const importService = async () => {
+    if (!payload) return;
+    if (!services.some((service) => service.slug === payload.serviceSlug) && !payload.serviceName) {
+      setParseError("El servicio no existe. Añade una fila record_type=service con el nombre en title para crearlo.");
+      return;
+    }
+    if (await onImport(payload)) {
+      setPayload(null);
+      setSourceName("");
+      setParseError(null);
+    }
+  };
+
+  return <View style={styles.serviceImportBox}>
+    <Text style={styles.fieldLabel}>Importar patrón de servicio</Text>
+    <Text style={styles.listMeta}>Usa un CSV explícito para crear o ampliar un servicio con filas service, field, item, rule y measure. Las filas se fusionan por código y no borran el patrón existente.</Text>
+    <Pressable style={styles.secondaryButton} onPress={chooseCsv}><Text style={styles.secondaryLabel}>{sourceName || "Seleccionar CSV de patrón"}</Text></Pressable>
+    {payload ? <Text style={styles.wizardText}>Servicio: {payload.serviceSlug} · {payload.fields.length} pregunta(s) · {payload.items.length} concepto(s) · {payload.rules.length} regla(s) · {payload.measures.length} medida(s)</Text> : null}
+    {parseError ? <Text style={styles.error}>{parseError}</Text> : null}
+    <Pressable style={styles.primaryButton} onPress={() => void importService()} disabled={saving || !payload || Boolean(parseError)}><Text style={styles.primaryLabel}>{saving ? "Importando patrón…" : "Importar patrón de servicio"}</Text></Pressable>
+  </View>;
 }
 
 function KnowledgeTable({ entries, onUpdate, onDelete, saving }: { entries: KnowledgeEntry[]; onUpdate: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDelete: (entryId: string) => Promise<boolean>; saving: boolean }) {
@@ -795,6 +879,60 @@ function parseKnowledgeCsv(text: string): KnowledgeRow[] {
       metadata,
     };
   });
+}
+
+function parseServiceCsv(text: string): { data?: ServiceImportData; error?: string } {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((line) => line.trim());
+  if (lines.length < 2) return { error: "El CSV de patrón debe tener una cabecera y al menos una fila." };
+  const delimiter = lines[0].includes(";") && !lines[0].includes(",") ? ";" : ",";
+  const headers = splitCsvLine(lines[0], delimiter).map((header) => header.trim().toLowerCase().replace(/[áéíóú]/g, (letter) => ({ á: "a", é: "e", í: "i", ó: "o", ú: "u" }[letter] ?? letter)));
+  const records = lines.slice(1).map((line) => {
+    const values = splitCsvLine(line, delimiter);
+    return Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""]));
+  });
+  const serviceSlug = records.find((record) => record.service_slug)?.service_slug ?? "";
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(serviceSlug)) return { error: "service_slug es obligatorio y debe tener formato kebab-case, por ejemplo reforma-bano." };
+  const fields: BlueprintField[] = [];
+  const items: BlueprintItem[] = [];
+  const rules: BlueprintRule[] = [];
+  const measures: Array<{ code: string; expression: Record<string, unknown> }> = [];
+  let serviceName: string | undefined;
+  let serviceDescription: string | undefined;
+
+  for (const record of records) {
+    const recordType = (record.record_type || record.tipo || "").toLowerCase();
+    if (!["service", "field", "item", "product", "rule", "measure"].includes(recordType)) return { error: `Tipo de registro no admitido: ${recordType || "vacío"}.` };
+    if (recordType === "service") {
+      serviceName = record.title || record.name;
+      serviceDescription = record.content || record.description;
+      if (!serviceName) return { error: "La fila service necesita el nombre del servicio en title." };
+      continue;
+    }
+    if (!record.code) return { error: `La fila ${recordType} necesita un código interno en code.` };
+    if (recordType === "field") {
+      const fieldType = record.response_type || record.value_type || record.type || "text";
+      if (!["text", "number", "choice", "boolean", "date", "file"].includes(fieldType)) return { error: `Tipo de pregunta no admitido para ${record.code}: ${fieldType}.` };
+      const options = (record.options || "").split(/[|;]/).map((option) => option.trim()).filter(Boolean);
+      const min = record.min ? Number(record.min.replace(",", ".")) : undefined;
+      const max = record.max ? Number(record.max.replace(",", ".")) : undefined;
+      fields.push({ key: record.code, label: record.title || record.code, type: fieldType, required: ["true", "1", "si", "sí", "yes"].includes((record.required || "").toLowerCase()), options, unit: record.unit || undefined, min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, help_text: record.content || undefined, example: record.example || undefined });
+    } else if (recordType === "item" || recordType === "product") {
+      const price = record.base_price ? Number(record.base_price.replace(",", ".")) : undefined;
+      if (record.base_price && !Number.isFinite(price)) return { error: `Precio no válido para ${record.code}.` };
+      items.push({ sku: record.code, name: record.title || record.code, description: record.content || undefined, unit: record.unit || "unit", base_price: Number.isFinite(price) ? price : undefined, currency: (record.currency || "EUR").toUpperCase(), metadata: {} });
+    } else if (recordType === "rule") {
+      const kind = record.rule_kind || record.kind || "formula";
+      if (!["unit_price", "factor", "surcharge", "minimum", "formula"].includes(kind)) return { error: `Tipo de regla no admitido para ${record.code}: ${kind}.` };
+      let definition: Record<string, unknown> = {};
+      try { definition = record.definition ? JSON.parse(record.definition) as Record<string, unknown> : {}; } catch { return { error: `El definition de ${record.code} no contiene JSON válido.` }; }
+      rules.push({ code: record.code, kind, priority: Number(record.priority) || 100, definition });
+    } else if (recordType === "measure") {
+      let expression: Record<string, unknown> = {};
+      try { expression = record.expression ? JSON.parse(record.expression) as Record<string, unknown> : {}; } catch { return { error: `El expression de ${record.code} no contiene JSON válido.` }; }
+      measures.push({ code: record.code, expression });
+    }
+  }
+  return { data: { serviceSlug, serviceName, serviceDescription, fields, items, rules, measures } };
 }
 
 function splitCsvLine(line: string, delimiter: string): string[] {
@@ -1522,6 +1660,7 @@ const styles = StyleSheet.create({
   smallButton: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8 },
   smallButtonLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   knowledgeBox: { backgroundColor: "#f7f9fc", borderRadius: 10, padding: 16, marginTop: 18 },
+  serviceImportBox: { backgroundColor: "#f0f7f2", borderRadius: 10, padding: 16, marginTop: 18, borderWidth: 1, borderColor: "#d3e5d8" },
   knowledgeCount: { color: "#61736a", fontSize: 12, lineHeight: 18, marginTop: 14 },
   secondaryButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 16, paddingVertical: 11, marginTop: 16 },
   secondaryLabel: { color: "#285246", fontSize: 14, fontWeight: "600" },

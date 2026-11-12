@@ -1,0 +1,12 @@
+service_slug,record_type,code,title,content,type,options,required,unit,base_price,currency,priority,definition
+reforma-bano,service,,Reforma de baño,Reforma parcial o integral de baño,,,,,,,
+reforma-bano,field,tipo_reforma,Tipo de reforma,Indica si se reforma una parte o todo el baño.,choice,parcial|integral,true,,,,
+reforma-bano,field,superficie_suelo,Superficie del suelo,Superficie aproximada del suelo que se va a reformar.,number,,true,m²,,,,
+reforma-bano,field,material_suelo,Material del suelo,Selecciona el material que se utilizará.,choice,baldosa gres|porcelánico|microcemento,true,,,,
+reforma-bano,field,retirada_azulejos,¿Hay que retirar azulejos?,Pregunta si hay demolición y retirada del revestimiento actual.,boolean,,true,,,,
+reforma-bano,item,material_brooklyn,Baldosa gres Brooklyn azul 50x50,Baldosa porcelánica para suelo de baño.,, , ,m²,22,EUR,,
+reforma-bano,item,mano_obra_general,Mano de obra general,Hora de oficial de reforma.,,,,hora,32,EUR,,
+reforma-bano,item,retirada_azulejos_m2,Retirada de azulejos,Demolición y retirada por superficie.,,,,m²,12,EUR,,
+reforma-bano,rule,floor_material_by_area,Material de suelo por superficie,,,,,, ,EUR,10,"{""item"":""material_brooklyn"",""field"":""superficie_suelo"",""quantity"":""superficie_suelo""}"
+reforma-bano,rule,wall_tile_removal,Retirada de azulejos por superficie,,,,,, ,EUR,20,"{""when"":{""retirada_azulejos"":true},""item"":""retirada_azulejos_m2"",""quantity"":""superficie_suelo""}"
+reforma-bano,measure,superficie_facturable,Superficie facturable,,,,,,,,,"{""source"":""superficie_suelo"",""rounding"":2}"
