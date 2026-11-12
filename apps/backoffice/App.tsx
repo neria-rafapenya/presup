@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "wizard" | "dashboard" | "company" | "services" | "knowledge" | "designer" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "designer" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -119,7 +119,7 @@ function routeFromPath(pathname: string): AppRoute | null {
   if (path === "/wizard") return { screen: "wizard" };
   if (path === "/dashboard") return { screen: "dashboard" };
   if (path === "/company") return { screen: "company" };
-  if (path === "/services") return { screen: "services" };
+  if (path === "/services") return { screen: "wizard" };
   if (path === "/knowledge") return { screen: "knowledge" };
   if (path === "/designer") return { screen: "designer" };
   if (path === "/requests") return { screen: "requests" };
@@ -151,7 +151,7 @@ export default function App() {
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
   const [designerService, setDesignerService] = useState<JobType | null>(null);
-  const [designerReturnScreen, setDesignerReturnScreen] = useState<Screen>("services");
+  const [designerReturnScreen, setDesignerReturnScreen] = useState<Screen>("wizard");
   const [wizardResumeStep, setWizardResumeStep] = useState(0);
   const [knowledgeSummary, setKnowledgeSummary] = useState<KnowledgeSummary>({ total: 0, by_kind: [] });
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
@@ -357,7 +357,7 @@ export default function App() {
   };
   const closeDesigner = () => {
     setDesignerService(null);
-    navigate(designerReturnScreen === "designer" ? "services" : designerReturnScreen);
+    navigate(designerReturnScreen === "designer" ? "wizard" : designerReturnScreen);
   };
 
   return (
@@ -370,9 +370,9 @@ export default function App() {
           <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
           <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
-          <NavButton label="Servicios y fichas" active={screen === "services" || screen === "designer" || screen === "knowledge"} onPress={() => navigate("services")} />
+          <Text style={[styles.navGroupLabel, (screen === "designer" || screen === "knowledge") && styles.navGroupLabelActive]}>Servicios y fichas</Text>
           <View style={styles.subnav}>
-            <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); navigate("designer", designerService?.id ?? undefined); }} />
+            <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("wizard"); navigate("designer", designerService?.id ?? undefined); }} />
             <NavButton label="Base de conocimiento" child active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           </View>
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
@@ -386,7 +386,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => openDesigner(service, "services")} onOpenServices={() => navigate("services")} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -411,9 +411,6 @@ export default function App() {
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
                 <Company summary={summary} setSummary={setSummary} profile={profile} setProfile={setProfile} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onSave={saveSettings} saving={saving} />
-              ) : null}
-              {screen === "services" ? (
-                <Services services={services} onCreate={createService} onDelete={deleteService} onDesignService={(service) => openDesigner(service, "services")} saving={saving} />
               ) : null}
               {screen === "knowledge" ? (
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={importKnowledge} saving={saving} />
@@ -685,7 +682,7 @@ function Services({ services, onCreate, onDelete, onDesignService, saving, embed
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Servicios configurados</Text>
-        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesignService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
+        <ServiceTable services={services} onDesign={onDesignService} onDelete={(service) => setServiceToDelete(service)} saving={saving} emptyText="Todavía no hay servicios configurados." />
       </View>
       <ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
       <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} />
@@ -693,8 +690,33 @@ function Services({ services, onCreate, onDelete, onDesignService, saving, embed
   );
 }
 
-function DesignerServicePicker({ services, onDesign, onOpenServices }: { services: JobType[]; onDesign: (service: JobType) => void; onOpenServices: () => void }) {
-  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Selecciona un servicio para editar sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><Pressable style={styles.secondaryButton} onPress={onOpenServices}><Text style={styles.secondaryLabel}>Gestionar servicios</Text></Pressable></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text>{services.length ? services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Pressable style={styles.primaryButton} onPress={() => onDesign(service)}><Text style={styles.primaryLabel}>Diseñar</Text></Pressable></View>) : <Text style={styles.emptyText}>Todavía no hay servicios. Crea uno desde «Servicios y fichas».</Text>}</View></View>;
+function ServiceTable({ services, onDesign, onDelete, saving, emptyText }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (service: JobType) => void; saving: boolean; emptyText: string }) {
+  const [filter, setFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  const filteredServices = services.filter((service) => !normalizedFilter || `${service.name} ${service.slug} ${service.status}`.toLocaleLowerCase().includes(normalizedFilter));
+  const totalPages = Math.max(1, Math.ceil(filteredServices.length / pageSize));
+  const visibleServices = filteredServices.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => setPage(1), [filter]);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  return <View>
+    <TextInput style={styles.filterInput} value={filter} onChangeText={setFilter} placeholder="Filtrar por nombre, slug o estado…" />
+    {filteredServices.length ? <>
+      <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Servicio</Text><Text style={styles.tableHeaderLabel}>Acciones</Text></View>
+      {visibleServices.map((service) => <View style={styles.tableRow} key={service.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesign(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => onDelete(service)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
+      <View style={styles.pagination}><Text style={styles.listMeta}>{filteredServices.length} servicio(s) · página {page} de {totalPages}</Text><View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View></View>
+    </> : <Text style={styles.emptyText}>{filter ? "No hay servicios que coincidan con el filtro." : emptyText}</Text>}
+  </View>;
+}
+
+function DesignerServicePicker({ services, onDesign, onDelete, saving }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
+  const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
+  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Selecciona un servicio para editar sus preguntas, catálogo, reglas y medidas calculadas.</Text></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios. Crea uno desde el paso Oferta del Wizard." /></View><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></View>;
 }
 
 function TutorialVideo() {
@@ -1245,7 +1267,7 @@ function ModulePlaceholder({ title, text }: { title: string; text: string }) {
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", knowledge: "Base de conocimiento", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", knowledge: "Base de conocimiento", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
@@ -1254,6 +1276,8 @@ const styles = StyleSheet.create({
   brand: { color: "#e7f2e9", fontSize: 22, fontWeight: "800", letterSpacing: 2 },
   brandSub: { color: "#8fc6a9", fontSize: 11, letterSpacing: 2, marginTop: 4 },
   nav: { gap: 6, marginTop: 48 },
+  navGroupLabel: { color: "#8fc6a9", fontSize: 12, fontWeight: "800", letterSpacing: 0.4, textTransform: "uppercase", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
+  navGroupLabelActive: { color: "#ffffff" },
   subnav: { marginLeft: 12, paddingLeft: 8, borderLeftWidth: 1, borderLeftColor: "#3b6b5a", gap: 4 },
   navButton: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12 },
   navButtonChild: { paddingVertical: 9, paddingLeft: 12 },
@@ -1414,6 +1438,15 @@ const styles = StyleSheet.create({
   primaryButton: { alignSelf: "flex-start", backgroundColor: "#258269", borderRadius: 8, paddingHorizontal: 18, paddingVertical: 12, marginTop: 8 },
   primaryLabel: { color: "#ffffff", fontSize: 14, fontWeight: "700" },
   listRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingVertical: 16 },
+  filterInput: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: "#17332d", backgroundColor: "#fbfcfb", marginBottom: 10 },
+  tableHeader: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#dbe6df", paddingHorizontal: 2, paddingVertical: 8 },
+  tableHeaderLabel: { color: "#61736a", fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.4 },
+  tableRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingVertical: 12, gap: 12 },
+  tableMain: { flex: 1, minWidth: 0 },
+  pagination: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14 },
+  paginationActions: { flexDirection: "row", gap: 8 },
+  paginationButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7 },
+  paginationLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   listTitle: { color: "#17332d", fontSize: 15, fontWeight: "700" },
   listMeta: { color: "#718078", fontSize: 12, marginTop: 4 },
   listArrow: { color: "#258269", fontSize: 28 },
