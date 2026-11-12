@@ -645,7 +645,6 @@ function Documentation() {
     "Ejemplo de documentación y políticas",
     "Cómo redactar entradas útiles",
     "Proceso recomendado de carga y validación",
-    "Servicios: creación y diseño",
   ];
   return <View>
     <View style={styles.panel}>
@@ -655,6 +654,10 @@ function Documentation() {
       <View style={styles.documentationDocumentActive}>
         <Text style={styles.documentationDocumentNumber}>1</Text>
         <View style={styles.tableMain}><Text style={styles.documentationDocumentTitle}>Documentación para nutrir la base de conocimiento</Text><Text style={styles.listMeta}>Guía para preparar CSV, productos, políticas, FAQ, patrones comerciales y documentación del tenant.</Text></View>
+      </View>
+      <View style={styles.documentationDocument}>
+        <Text style={styles.documentationDocumentNumber}>2</Text>
+        <View style={styles.tableMain}><Text style={styles.documentationDocumentTitle}>Servicios</Text><Text style={styles.listMeta}>Guía para crear y diseñar servicios, preguntas, catálogo, reglas y medidas.</Text></View>
       </View>
     </View>
     <View style={styles.panel}>
@@ -727,7 +730,7 @@ function Documentation() {
       <Text style={styles.documentationCallout}>La importación actual es por CSV. La carga directa de PDF o DOC todavía no está habilitada en la POC.</Text>
     </DocumentationSection>
 
-    <DocumentationSection number="9" title="Servicios: creación y diseño">
+    <DocumentationDocumentSection title="Servicios">
       <Text style={styles.documentationText}>Un servicio representa una línea de trabajo que el tenant quiere presupuestar. Una empresa de reformas puede crear Reforma de baño, Reforma de cocina y Reforma integral como servicios independientes.</Text>
       <DocumentationBullet title="1. Crear el servicio" text="Abre Wizard → Oferta y servicios → Nuevo servicio. Escribe un nombre visible y una descripción. El slug se genera automáticamente y no se edita manualmente." />
       <DocumentationBullet title="2. Abrir el diseñador" text="En la lista de servicios pulsa Diseñar. Se abrirá la ruta propia del servicio y podrás trabajar sin abandonar el contexto del backoffice." />
@@ -749,12 +752,16 @@ Catálogo:
 Regla:
 - floor_material_by_area = superficie_suelo × precio de Baldosa gres Brooklyn`}</Text>
       <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code.</Text>
-    </DocumentationSection>
+    </DocumentationDocumentSection>
   </View>;
 }
 
 function DocumentationSection({ number, title, children }: { number: string; title: string; children: ReactNode }) {
   return <View style={styles.documentationSection}><Text style={styles.documentationSectionTitle}>{number}. {title}</Text>{children}</View>;
+}
+
+function DocumentationDocumentSection({ title, children }: { title: string; children: ReactNode }) {
+  return <View style={styles.documentationSection}><Text style={styles.documentationSectionTitle}>{title}</Text><Text style={styles.sectionLabel}>Índice de este documento</Text><Text style={styles.documentationIndex}>1. Crear el servicio</Text><Text style={styles.documentationIndex}>2. Abrir el diseñador</Text><Text style={styles.documentationIndex}>3. Añadir preguntas, catálogo y reglas</Text><Text style={styles.documentationIndex}>4. Guardar y probar</Text><Text style={styles.documentationIndex}>5. Importar mediante CSV</Text>{children}</View>;
 }
 
 function DocumentationBullet({ title, text }: { title: string; text: string }) {
@@ -1862,6 +1869,7 @@ const styles = StyleSheet.create({
   panel: { backgroundColor: "#ffffff", borderRadius: 14, padding: 24, borderWidth: 1, borderColor: "#e1e8e3", marginBottom: 18 },
   panelTitle: { color: "#17332d", fontSize: 18, fontWeight: "700", marginBottom: 20 },
   documentationIndex: { color: "#285246", fontSize: 14, lineHeight: 24 },
+  documentationDocument: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: "#dbe6df", borderRadius: 9, backgroundColor: "#fbfcfb", padding: 12, marginTop: 8 },
   documentationDocumentActive: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: "#8fc6a9", borderRadius: 9, backgroundColor: "#edf7f0", padding: 12 },
   documentationDocumentNumber: { color: "#258269", fontSize: 16, fontWeight: "800", width: 22 },
   documentationDocumentTitle: { color: "#17332d", fontSize: 14, fontWeight: "800", marginBottom: 4 },
