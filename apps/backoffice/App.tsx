@@ -775,7 +775,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     if (reference === "field" && rule.kind === "formula") nextDefinition.quantity = value;
     updateRule(index, { definitionText: JSON.stringify(nextDefinition, null, 2) });
   };
-  const addRule = (kind: BlueprintRule["kind"]) => { markDesignerDirty(); const index = ruleCards.length; setExpandedBlockKey(`rule-${index}`); setRuleCards([...ruleCards, editableRule({ code: `${kind}_rule_${index + 1}`, kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); highlightNewBlock("rule", index); };
+  const addRule = (kind: BlueprintRule["kind"]) => { markDesignerDirty(); const index = ruleCards.length; setExpandedBlockKey(`rule-${index}`); setRuleCards([...ruleCards, editableRule({ code: "", kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); highlightNewBlock("rule", index); };
   const removeRule = (index: number) => { markDesignerDirty(); setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index)); };
   const save = async (blockKey?: string) => {
     setSavingBlockKey(blockKey ?? null);
@@ -787,6 +787,8 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       const itemCodes = new Set(draft.items.map((item) => item.sku));
       const measureCodes = new Set(measures.map((measure) => measure.code));
       rules.forEach((rule) => {
+        if (!rule.code.trim()) throw new Error("Cada regla debe tener un código. Ejemplo: floor_material_by_area");
+        if (!/^[a-z][a-z0-9_]{1,63}$/.test(rule.code)) throw new Error(`El código de la regla «${rule.code}» debe usar minúsculas, números y guiones bajos.`);
         const definition = rule.definition;
         if (typeof definition.field === "string" && !fieldCodes.has(definition.field)) throw new Error(`La regla «${rule.code}» referencia un campo inexistente: ${definition.field}`);
         if (typeof definition.quantity === "string" && !fieldCodes.has(definition.quantity) && !measureCodes.has(definition.quantity)) throw new Error(`La regla «${rule.code}» referencia una cantidad inexistente: ${definition.quantity}`);
@@ -846,8 +848,8 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             <Text style={styles.sectionLabel}>Reglas deterministas</Text>
             <Text style={styles.listMeta}>El LLM propone datos; estas reglas son las que podrán calcular el importe.</Text>
             <View style={styles.blockPalette}>{[["Mínimo", "minimum"], ["Descuento", "factor"], ["Recargo", "surcharge"], ["Fórmula", "formula"]].map(([label, kind]) => <Pressable style={styles.paletteButton} key={kind} onPress={() => addRule(kind as BlueprintRule["kind"])}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {ruleCards.map((rule, index) => <Animated.View onLayout={(event) => { rulePositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "rule" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null]} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`rule-${index}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `rule-${index}` ? "▲" : "▼"}</Text><Text style={styles.blockTitle}>{rule.code || "Regla sin código"}</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`rule-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `rule-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `rule-${index}`}><View style={styles.designerRow}><Field label="Código" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><View style={styles.designerRow}><ReferenceSelector label="Campo de referencia" hint="Escoge la pregunta o variable que aporta la cantidad o condición de esta regla." value={ruleReferenceValue(rule, "field")} options={draft.fields.map((field) => ({ value: field.key, label: field.label }))} onChange={(value) => updateRuleReference(index, "field", value)} /><ReferenceSelector label="Concepto facturable" hint="Escoge el producto, material, mano de obra o extra que aplicará la regla." value={ruleReferenceValue(rule, "item")} options={draft.items.map((item) => ({ value: item.sku, label: item.name }))} onChange={(value) => updateRuleReference(index, "item", value)} /></View><Text style={styles.fieldLabel}>Detalle avanzado de la regla (JSON)</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></AnimatedCollapse></Animated.View>)}
-            <View style={styles.sectionHeaderRow}><View style={styles.sectionHeaderContent}><Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text><Text style={styles.listMeta}>Guarda aquí las cantidades intermedias que usarán las reglas, por ejemplo una superficie con desperdicio.</Text></View><Pressable style={styles.blockSaveButton} onPress={() => void save("measures")} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === "measures" ? "Guardando…" : "Guardar"}</Text></Pressable></View>
+            {ruleCards.map((rule, index) => <Animated.View onLayout={(event) => { rulePositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "rule" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null]} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`rule-${index}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `rule-${index}` ? "▲" : "▼"}</Text><Text style={styles.blockTitle}>{rule.code || "Regla sin código"}</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`rule-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `rule-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `rule-${index}`}><View style={styles.designerRow}><Field label="Código" hint="Identificador de la regla. Usa minúsculas y guiones bajos." placeholder="Ejemplo: floor_material_by_area" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><View style={styles.designerRow}><ReferenceSelector label="Campo de referencia" hint="Escoge la pregunta o variable que aporta la cantidad o condición de esta regla." value={ruleReferenceValue(rule, "field")} options={draft.fields.map((field) => ({ value: field.key, label: field.label }))} onChange={(value) => updateRuleReference(index, "field", value)} /><ReferenceSelector label="Concepto facturable" hint="Escoge el producto, material, mano de obra o extra que aplicará la regla." value={ruleReferenceValue(rule, "item")} options={draft.items.map((item) => ({ value: item.sku, label: item.name }))} onChange={(value) => updateRuleReference(index, "item", value)} /></View><View style={styles.ruleSummary}><Text style={styles.ruleSummaryLabel}>¿Qué hace esta regla?</Text><Text style={styles.ruleSummaryText}>{ruleSummary(rule, draft.fields, draft.items)}</Text></View><Text style={styles.fieldLabel}>Detalle avanzado de la regla (JSON)</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></AnimatedCollapse></Animated.View>)}
+            <View style={styles.sectionHeaderRow}><View style={styles.sectionHeaderContent}><Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text><Text style={styles.listMeta}>Úsalas solo para cantidades intermedias reutilizables, como una superficie con un 10 % de desperdicio. Para una relación directa como superficie × material no necesitas crear una medida.</Text></View><Pressable style={styles.blockSaveButton} onPress={() => void save("measures")} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === "measures" ? "Guardando…" : "Guardar"}</Text></Pressable></View>
             <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={(value) => { markDesignerDirty(); setMeasuresText(value); }} multiline />
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
             {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}
@@ -890,6 +892,19 @@ function ruleReferenceValue(rule: EditableRule, reference: "field" | "item"): st
   const definition = parseRuleDefinition(rule.definitionText);
   const value = reference === "field" ? definition.quantity ?? definition.field : definition.item;
   return typeof value === "string" ? value : "";
+}
+
+function ruleSummary(rule: EditableRule, fields: BlueprintField[], items: BlueprintItem[]): string {
+  const fieldCode = ruleReferenceValue(rule, "field");
+  const itemCode = ruleReferenceValue(rule, "item");
+  const fieldName = fields.find((field) => field.key === fieldCode)?.label;
+  const itemName = items.find((item) => item.sku === itemCode)?.name;
+  if (rule.kind === "formula" && fieldName && itemName) return `Calcula ${fieldName} × precio de ${itemName}.`;
+  if (rule.kind === "surcharge" && itemName) return `Añade ${itemName} cuando se cumpla la condición configurada.`;
+  if (rule.kind === "minimum" && fieldName) return `Aplica un importe mínimo tomando como referencia ${fieldName}.`;
+  if (rule.kind === "factor" && fieldName) return `Aplica descuentos o factores según ${fieldName}.`;
+  if (rule.kind === "unit_price" && itemName) return `Usa el precio unitario de ${itemName}.`;
+  return "Selecciona las referencias para describir qué hará esta regla.";
 }
 
 function toEditableRules(rules: BlueprintRule[]): EditableRule[] {
@@ -1097,8 +1112,8 @@ function AnimatedCollapse({ expanded, children }: { expanded: boolean; children:
   return <Animated.View pointerEvents={expanded ? "auto" : "none"} style={[styles.collapsibleContent, { opacity: progress, maxHeight: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1200] }) }]}>{children}</Animated.View>;
 }
 
-function Field({ label, hint, value, onChangeText, keyboardType, multiline = false, editable = true }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean; editable?: boolean }) {
-  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea, !editable && styles.readonlyInput]} value={value} onChangeText={onChangeText} keyboardType={keyboardType} multiline={multiline} editable={editable} textAlignVertical={multiline ? "top" : "center"} /></View>;
+function Field({ label, hint, value, onChangeText, keyboardType, multiline = false, editable = true, placeholder }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean; editable?: boolean; placeholder?: string }) {
+  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea, !editable && styles.readonlyInput]} value={value} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} multiline={multiline} editable={editable} textAlignVertical={multiline ? "top" : "center"} /></View>;
 }
 
 function FieldTypeSelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -1118,7 +1133,7 @@ type ReferenceOption = { value: string; label: string };
 function ReferenceSelector({ label, hint, value, options, onChange }: { label: string; hint: string; value: string; options: ReferenceOption[]; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
-  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><Pressable style={[styles.typeSelector, !options.length && styles.readonlyInput]} onPress={() => { if (options.length) setOpen(!open); }} disabled={!options.length}><Text style={[styles.typeSelectorLabel, !selected && styles.selectorPlaceholder]}>{selected ? `${selected.value} — ${selected.label}` : options.length ? "Seleccionar una referencia" : "No hay opciones creadas"}</Text><Text style={styles.typeSelectorHint}>{options.length ? (open ? "Cerrar" : "Seleccionar") : ""}</Text></Pressable>{open ? <View style={styles.referenceMenu}>{options.map((option) => <Pressable key={option.value} style={styles.referenceOption} onPress={() => { onChange(option.value); setOpen(false); }}><Text style={styles.referenceOptionCode}>{option.value}</Text><Text style={styles.referenceOptionLabel}>{option.label}</Text></Pressable>)}</View> : null}</View>;
+  return <View style={[styles.field, open && styles.referenceFieldOpen]}><InfoLabel label={label} hint={hint} /><Pressable style={[styles.typeSelector, !options.length && styles.readonlyInput]} onPress={() => { if (options.length) setOpen(!open); }} disabled={!options.length}><Text style={[styles.typeSelectorLabel, !selected && styles.selectorPlaceholder]}>{selected ? `${selected.value} — ${selected.label}` : options.length ? "Seleccionar una referencia" : "No hay opciones creadas"}</Text><Text style={styles.typeSelectorHint}>{options.length ? (open ? "Cerrar" : "Seleccionar") : ""}</Text></Pressable>{open ? <View style={styles.referenceMenu}>{options.map((option) => <Pressable key={option.value} style={styles.referenceOption} onPress={() => { onChange(option.value); setOpen(false); }}><Text style={styles.referenceOptionCode}>{option.value}</Text><Text style={styles.referenceOptionLabel}>{option.label}</Text></Pressable>)}</View> : null}</View>;
 }
 
 function Toggle({ label, hint, value, onPress }: { label: string; hint?: string; value: boolean; onPress: () => void }) {
@@ -1209,7 +1224,8 @@ const styles = StyleSheet.create({
   unitMenu: { position: "absolute", top: 56, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, zIndex: 30 },
   unitOption: { paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#edf1ee" },
   unitOptionLabel: { color: "#17332d", fontSize: 13 },
-  referenceMenu: { position: "absolute", top: 56, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, zIndex: 40, maxHeight: 240 },
+  referenceFieldOpen: { position: "relative", zIndex: 1000, elevation: 20 },
+  referenceMenu: { position: "absolute", top: 56, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, zIndex: 1000, elevation: 20, maxHeight: 240 },
   referenceOption: { paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#edf1ee" },
   referenceOptionCode: { color: "#285246", fontSize: 11, fontWeight: "800" },
   referenceOptionLabel: { color: "#17332d", fontSize: 13, marginTop: 2 },
@@ -1231,6 +1247,9 @@ const styles = StyleSheet.create({
   deleteButton: { borderWidth: 1, borderColor: "#e2b7b2", borderRadius: 7, paddingHorizontal: 8, paddingVertical: 7, marginTop: 8 },
   dangerButton: { alignSelf: "flex-start", backgroundColor: "#a53d35", borderRadius: 8, paddingHorizontal: 18, paddingVertical: 12, marginTop: 8 },
   ruleDetailInput: { minHeight: 72, fontFamily: "monospace", fontSize: 12 },
+  ruleSummary: { backgroundColor: "#eef7f1", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, marginTop: 8, marginBottom: 8 },
+  ruleSummaryLabel: { color: "#285246", fontSize: 11, fontWeight: "800" },
+  ruleSummaryText: { color: "#17332d", fontSize: 13, lineHeight: 18, marginTop: 3 },
   codeInput: { fontFamily: "monospace", fontSize: 12 },
   infoLabelWrap: { position: "relative", zIndex: 2 },
   infoLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
