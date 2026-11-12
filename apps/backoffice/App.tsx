@@ -693,7 +693,7 @@ function Services({ services, onCreate, onDelete, onDesignService, saving, embed
 function ServiceTable({ services, onDesign, onDelete, saving, emptyText }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (service: JobType) => void; saving: boolean; emptyText: string }) {
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
+  const pageSize = 15;
   const normalizedFilter = filter.trim().toLocaleLowerCase();
   const filteredServices = services.filter((service) => !normalizedFilter || `${service.name} ${service.slug} ${service.status}`.toLocaleLowerCase().includes(normalizedFilter));
   const totalPages = Math.max(1, Math.ceil(filteredServices.length / pageSize));
@@ -709,7 +709,7 @@ function ServiceTable({ services, onDesign, onDelete, saving, emptyText }: { ser
     {filteredServices.length ? <>
       <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Servicio</Text><Text style={styles.tableHeaderLabel}>Acciones</Text></View>
       {visibleServices.map((service) => <View style={styles.tableRow} key={service.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesign(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => onDelete(service)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
-      <View style={styles.pagination}><Text style={styles.listMeta}>{filteredServices.length} servicio(s) · página {page} de {totalPages}</Text><View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View></View>
+      <View style={styles.pagination}><Text style={styles.listMeta}>{filteredServices.length} servicio(s){totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View>
     </> : <Text style={styles.emptyText}>{filter ? "No hay servicios que coincidan con el filtro." : emptyText}</Text>}
   </View>;
 }
