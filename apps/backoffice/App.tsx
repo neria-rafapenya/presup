@@ -110,6 +110,29 @@ function isWizardCompleted() {
   return window.localStorage.getItem(WIZARD_STORAGE_KEY) === "true";
 }
 
+type AppRoute = { screen: Screen; serviceId?: string };
+
+function routeFromPath(pathname: string): AppRoute | null {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  const designerMatch = path.match(/^\/services\/([^/]+)\/design$/);
+  if (designerMatch) return { screen: "designer", serviceId: decodeURIComponent(designerMatch[1]) };
+  if (path === "/wizard") return { screen: "wizard" };
+  if (path === "/dashboard") return { screen: "dashboard" };
+  if (path === "/company") return { screen: "company" };
+  if (path === "/services") return { screen: "services" };
+  if (path === "/designer") return { screen: "designer" };
+  if (path === "/requests") return { screen: "requests" };
+  if (path === "/quotes") return { screen: "quotes" };
+  if (path === "/") return { screen: isWizardCompleted() ? "dashboard" : "wizard" };
+  return null;
+}
+
+function routePath(screen: Screen, serviceId?: string): string {
+  if (screen === "designer" && serviceId) return `/services/${encodeURIComponent(serviceId)}/design`;
+  if (screen === "designer") return "/designer";
+  return `/${screen}`;
+}
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const isMultipart = typeof FormData !== "undefined" && options?.body instanceof FormData;
   const response = await fetch(`${API_URL}${path}`, {
@@ -121,7 +144,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>(() => (isWizardCompleted() ? "dashboard" : "wizard"));
+  const [screen, setScreen] = useState<Screen>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.screen ?? (isWizardCompleted() ? "dashboard" : "wizard"));
+  const [designerRouteServiceId, setDesignerRouteServiceId] = useState<string | null>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.serviceId ?? null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
@@ -194,6 +218,31 @@ export default function App() {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  useEffect(() => {
+    if (screen === "designer" && designerRouteServiceId && services.length) {
+      setDesignerService(services.find((service) => service.id === designerRouteServiceId) ?? null);
+    }
+  }, [screen, designerRouteServiceId, services]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextPath = routePath(screen, designerService?.id ?? designerRouteServiceId ?? undefined);
+    if (window.location.pathname !== nextPath) window.history.pushState({}, "", nextPath);
+  }, [screen, designerService, designerRouteServiceId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPopState = () => {
+      const nextRoute = routeFromPath(window.location.pathname);
+      if (!nextRoute) return;
+      setScreen(nextRoute.screen);
+      setDesignerRouteServiceId(nextRoute.serviceId ?? null);
+      if (nextRoute.screen !== "designer") setDesignerService(null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const saveSettings = async () => {
@@ -293,15 +342,21 @@ export default function App() {
     }
   };
 
+  const navigate = (nextScreen: Screen, serviceId?: string) => {
+    setScreen(nextScreen);
+    setDesignerRouteServiceId(nextScreen === "designer" ? serviceId ?? null : null);
+    if (nextScreen !== "designer") setDesignerService(null);
+  };
+
   const openDesigner = (service: JobType, returnScreen: Screen) => {
     setDesignerReturnScreen(returnScreen);
     setWizardResumeStep(returnScreen === "wizard" ? 1 : 0);
     setDesignerService(service);
-    setScreen("designer");
+    navigate("designer", service.id);
   };
   const closeDesigner = () => {
     setDesignerService(null);
-    setScreen(designerReturnScreen === "designer" ? "services" : designerReturnScreen);
+    navigate(designerReturnScreen === "designer" ? "services" : designerReturnScreen);
   };
 
   return (
@@ -311,13 +366,13 @@ export default function App() {
         <Text style={styles.brand}>HOREKIA</Text>
         <Text style={styles.brandSub}>BACKOFFICE</Text>
         <View style={styles.nav}>
-          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); setScreen("wizard"); }} />
-          <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => setScreen("dashboard")} />
-          <NavButton label="Empresa" active={screen === "company"} onPress={() => setScreen("company")} />
-          <NavButton label="Servicios y fichas" active={screen === "services"} onPress={() => setScreen("services")} />
-          <NavButton label="Diseñador de servicios" active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); setScreen("designer"); }} />
-          <NavButton label="Peticiones" active={screen === "requests"} onPress={() => setScreen("requests")} />
-          <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => setScreen("quotes")} />
+          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
+          <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
+          <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
+          <NavButton label="Servicios y fichas" active={screen === "services"} onPress={() => navigate("services")} />
+          <NavButton label="Diseñador de servicios" active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); navigate("designer", designerService?.id ?? undefined); }} />
+          <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
+          <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
         </View>
         <View style={styles.sidebarBottom}>
           <Text style={styles.sidebarHint}>Instalación POC</Text>
@@ -327,7 +382,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => setDesignerService(service)} onOpenServices={() => setScreen("services")} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => openDesigner(service, "services")} onOpenServices={() => navigate("services")} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -347,7 +402,7 @@ export default function App() {
           ) : summary && profile ? (
             <>
               {screen === "wizard" ? (
-                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} saving={saving} />
+                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} saving={saving} />
               ) : null}
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
@@ -860,7 +915,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
   const designerPanel = (
         <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
-          <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={requestClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
+          <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View></View>
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
           <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
             <View style={styles.templateChoices}>
