@@ -67,11 +67,21 @@ export default function App() {
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const link = document.createElement("link");
+    const style = document.createElement("style");
     link.rel = "stylesheet";
     link.href = "https://fonts.googleapis.com/css2?family=Lato:wght@400;900&display=swap";
     link.setAttribute("data-horekia-font", "lato");
+    style.setAttribute("data-horekia-font-style", "lato");
+    style.textContent = `
+      body, body * { font-family: "Lato", sans-serif !important; }
+      body [style*="monospace"] { font-family: monospace !important; }
+    `;
     document.head.appendChild(link);
-    return () => link.remove();
+    document.head.appendChild(style);
+    return () => {
+      link.remove();
+      style.remove();
+    };
   }, []);
 
   useEffect(() => { void loadServices(); }, []);
