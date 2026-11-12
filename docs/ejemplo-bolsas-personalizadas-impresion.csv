@@ -1,0 +1,4 @@
+service_slug,record_type,code,title,content,type,options,required,unit,base_price,currency,priority,definition
+bolsas,field,print_method,Tipo de impresión,¿Qué tipo de impresión quieres?,choice,"digital|serigrafía|transfer|sublimación",true,,,,,
+bolsas,field,print_color_mode,Número de colores,¿Qué tipo de color quieres utilizar en la impresión?,choice,"blanco y negro|2 colores|4 colores|color completo",true,,,,,
+bolsas,field,print_sides,Caras impresas,¿Quieres imprimir las bolsas por una cara o por las dos?,choice,"una cara|dos caras",true,,,,,
