@@ -10,6 +10,20 @@ type AccountResponse = { session_token: string; quote: Quote };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const TENANT_SLUG = process.env.EXPO_PUBLIC_TENANT_SLUG ?? "empresa-demo-uno";
+const CUSTOMER_SESSION_STORAGE_KEY = "horekia.customer.session";
+
+function readCustomerSession(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY); } catch { return null; }
+}
+
+function storeCustomerSession(token: string): void {
+  try { window.localStorage.setItem(CUSTOMER_SESSION_STORAGE_KEY, token); } catch { /* storage may be unavailable */ }
+}
+
+function clearCustomerSession(): void {
+  try { window.localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY); } catch { /* storage may be unavailable */ }
+}
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) }, ...options });
@@ -38,7 +52,7 @@ export default function App() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [accountPassword, setAccountPassword] = useState("");
   const [accountPasswordConfirmation, setAccountPasswordConfirmation] = useState("");
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(() => readCustomerSession());
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [completingAccount, setCompletingAccount] = useState(false);
@@ -75,18 +89,27 @@ export default function App() {
   };
 
   const chooseService = (service: Service) => {
-    setSelectedService(service); setConversationClosed(false); setRequestId(null); setMessages([]); setQuote(null); setQuoteAvailable(false); setActiveField(null); setDraft(""); setCustomerName(""); setCustomerEmail(""); setAccountPassword(""); setAccountPasswordConfirmation(""); setSessionToken(null); setError(null);
+    setSelectedService(service); setConversationClosed(false); setRequestId(null); setMessages([]); setQuote(null); setQuoteAvailable(false); setActiveField(null); setDraft(""); setCustomerName(""); setCustomerEmail(""); setAccountPassword(""); setAccountPasswordConfirmation(""); setError(null);
+    if (sessionToken) void startConversation(service, sessionToken);
   };
 
-  const startConversation = async () => {
-    if (!selectedService) return;
-    if (!customerName.trim() || customerName.trim().length < 2) { setError("Escribe tu nombre para continuar."); return; }
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(customerEmail.trim())) { setError("Escribe un email válido para continuar."); return; }
+  const startConversation = async (serviceOverride?: Service, sessionOverride?: string | null) => {
+    const service = serviceOverride ?? selectedService;
+    const activeSession = sessionOverride ?? sessionToken;
+    if (!service) return;
+    if (!activeSession && (!customerName.trim() || customerName.trim().length < 2)) { setError("Escribe tu nombre para continuar."); return; }
+    if (!activeSession && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(customerEmail.trim())) { setError("Escribe un email válido para continuar."); return; }
     setConversationClosed(false); setRequestId(null); setMessages([]); setQuote(null); setQuoteAvailable(false); setActiveField(null); setDraft(""); setSending(true); setError(null);
     try {
-      const result = await api<{ request_id: string; message: { body: string }; field?: ActiveField | null }>(`/api/v1/public/tenants/${encodeURIComponent(TENANT_SLUG)}/conversations`, { method: "POST", body: JSON.stringify({ job_type_slug: selectedService.slug, customer_name: customerName.trim(), customer_email: customerEmail.trim() }) });
+      const result = await api<{ request_id: string; message: { body: string }; field?: ActiveField | null }>(`/api/v1/public/tenants/${encodeURIComponent(TENANT_SLUG)}/conversations`, { method: "POST", body: JSON.stringify({ job_type_slug: service.slug, ...(activeSession ? { session_token: activeSession } : { customer_name: customerName.trim(), customer_email: customerEmail.trim() }) }) });
       setRequestId(result.request_id); setMessages([{ sender: "assistant", body: result.message.body }]); setQuote(null); setActiveField(result.field ?? null);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No se ha podido iniciar la conversación con este servicio."); }
+    } catch (requestError) {
+      if (activeSession) {
+        setSessionToken(null); clearCustomerSession(); setError("Tu sesión ha caducado. Introduce tu nombre y email para continuar.");
+      } else {
+        setError(requestError instanceof Error ? requestError.message : "No se ha podido iniciar la conversación con este servicio.");
+      }
+    }
     finally { setSending(false); }
   };
 
@@ -95,9 +118,12 @@ export default function App() {
     if (!content || !requestId || sending || conversationClosed) return;
     setDraft(""); setMessages((current) => [...current, { sender: "customer", body: content }]); setSending(true); setError(null);
     try {
-      const result = await api<{ reply: string; status?: string; field?: ActiveField | null; quote_available?: boolean }>(`/api/v1/public/conversations/${requestId}/messages`, { method: "POST", body: JSON.stringify({ content }) });
-      setMessages((current) => [...current, { sender: "assistant", body: result.reply }]); setActiveField(result.field ?? null); setConversationClosed(result.status === "closed"); if (result.quote_available) setQuoteAvailable(true);
-    } catch { setError("No se ha podido enviar el mensaje. Inténtalo de nuevo."); }
+      const result = await api<{ reply: string; status?: string; field?: ActiveField | null; quote_available?: boolean; quote?: Quote }>(`/api/v1/public/conversations/${requestId}/messages`, { method: "POST", body: JSON.stringify({ content, ...(sessionToken ? { session_token: sessionToken } : {}) }) });
+      setMessages((current) => [...current, { sender: "assistant", body: result.reply }]); setActiveField(result.field ?? null); setConversationClosed(result.status === "closed"); if (result.quote_available) setQuoteAvailable(true); if (result.quote) setQuote(result.quote);
+    } catch (requestError) {
+      if (sessionToken) { setSessionToken(null); clearCustomerSession(); setError("Tu sesión ha caducado. Vuelve a identificarte para continuar."); }
+      else setError("No se ha podido enviar el mensaje. Inténtalo de nuevo.");
+    }
     finally { setSending(false); }
   };
 
@@ -108,12 +134,12 @@ export default function App() {
     setCompletingAccount(true); setError(null);
     try {
       const result = await api<AccountResponse>(`/api/v1/public/conversations/${requestId}/account`, { method: "POST", body: JSON.stringify({ password: accountPassword, password_confirmation: accountPasswordConfirmation }) });
-      setSessionToken(result.session_token); setQuote(result.quote); setQuoteAvailable(false); setAccountPassword(""); setAccountPasswordConfirmation("");
+      setSessionToken(result.session_token); storeCustomerSession(result.session_token); setQuote(result.quote); setQuoteAvailable(false); setAccountPassword(""); setAccountPasswordConfirmation("");
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No se ha podido activar la cuenta."); }
     finally { setCompletingAccount(false); }
   };
 
-  const restart = () => { setSelectedService(null); setRequestId(null); setMessages([]); setQuote(null); setQuoteAvailable(false); setActiveField(null); setConversationClosed(false); setCustomerName(""); setCustomerEmail(""); setAccountPassword(""); setAccountPasswordConfirmation(""); setSessionToken(null); setError(null); };
+  const restart = () => { setSelectedService(null); setRequestId(null); setMessages([]); setQuote(null); setQuoteAvailable(false); setActiveField(null); setConversationClosed(false); setCustomerName(""); setCustomerEmail(""); setAccountPassword(""); setAccountPasswordConfirmation(""); setError(null); };
 
   return <View style={styles.shell}>
     <StatusBar style="dark" />
@@ -124,7 +150,7 @@ export default function App() {
           <Text style={styles.title}>¿Qué necesitas presupuestar?</Text><Text style={styles.subtitle}>Elige un servicio y te haré las preguntas necesarias para preparar tu solicitud.</Text>
           {loading ? <ActivityIndicator color="#258269" size="large" style={styles.loader} /> : services.length === 0 ? <Text style={styles.empty}>No hay servicios publicados todavía.</Text> : <View style={styles.services}>{services.map((service) => <Pressable key={service.slug} style={styles.service} onPress={() => chooseService(service)} disabled={sending}><View style={styles.serviceCopy}><Text style={styles.serviceTitle}>{service.name}</Text><Text style={styles.serviceDescription}>{service.description || "Preparar una solicitud de presupuesto."}</Text></View><Text style={styles.serviceArrow}>→</Text></Pressable>)}</View>}
         </> : <>
-          {!requestId ? <View style={styles.contactStep}><Text style={styles.contactTitle}>Antes de empezar</Text><Text style={styles.subtitle}>Dinos tu nombre y email para poder identificar tu solicitud y entregarte el presupuesto cuando esté preparado.</Text><TextInput ref={customerNameRef} style={styles.inputFull} value={customerName} onChangeText={setCustomerName} placeholder="Tu nombre" autoFocus editable={!sending} returnKeyType="next" /><TextInput style={styles.inputFull} value={customerEmail} onChangeText={setCustomerEmail} placeholder="Tu email" keyboardType="email-address" autoCapitalize="none" editable={!sending} onSubmitEditing={() => void startConversation()} returnKeyType="send" /><Pressable style={styles.sendFull} onPress={() => void startConversation()} disabled={sending}><Text style={styles.sendLabel}>{sending ? "Preparando…" : "Continuar"}</Text></Pressable></View> : null}
+          {!requestId && !sessionToken ? <View style={styles.contactStep}><Text style={styles.contactTitle}>Antes de empezar</Text><Text style={styles.subtitle}>Dinos tu nombre y email para poder identificar tu solicitud y entregarte el presupuesto cuando esté preparado.</Text><TextInput ref={customerNameRef} style={styles.inputFull} value={customerName} onChangeText={setCustomerName} placeholder="Tu nombre" autoFocus editable={!sending} returnKeyType="next" /><TextInput style={styles.inputFull} value={customerEmail} onChangeText={setCustomerEmail} placeholder="Tu email" keyboardType="email-address" autoCapitalize="none" editable={!sending} onSubmitEditing={() => void startConversation()} returnKeyType="send" /><Pressable style={styles.sendFull} onPress={() => void startConversation()} disabled={sending}><Text style={styles.sendLabel}>{sending ? "Preparando…" : "Continuar"}</Text></Pressable></View> : !requestId ? <ActivityIndicator color="#258269" size="large" style={styles.loader} /> : null}
           {requestId ? <>
           <View style={styles.chatHeader}><View><Text style={styles.title}>{selectedService.name}</Text><Text style={styles.subtitle}>Asistente de presupuesto</Text></View><Pressable onPress={restart}><Text style={styles.restart}>Cambiar servicio</Text></Pressable></View>
           <ScrollView ref={messagesScrollRef} style={styles.messages} contentContainerStyle={styles.messagesContent}>{messages.map((message, index) => <View key={`${message.sender}-${index}`} style={[styles.message, message.sender === "customer" ? styles.customerMessage : styles.assistantMessage]}><PublicMessageBody body={message.body} /></View>)}{sending ? <ActivityIndicator color="#258269" size="small" style={styles.chatLoader} /> : null}</ScrollView>

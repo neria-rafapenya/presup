@@ -17,7 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 import certifi
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
@@ -29,9 +29,16 @@ router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
 class ConversationStart(BaseModel):
     job_type_slug: str = Field(min_length=1, max_length=120)
-    customer_name: str = Field(min_length=2, max_length=160)
-    customer_email: str = Field(min_length=5, max_length=240)
+    customer_name: str | None = Field(default=None, min_length=2, max_length=160)
+    customer_email: str | None = Field(default=None, min_length=5, max_length=240)
     customer_phone: str | None = Field(default=None, max_length=80)
+    session_token: str | None = Field(default=None, min_length=20, max_length=240)
+
+    @model_validator(mode="after")
+    def require_contact_or_session(self) -> "ConversationStart":
+        if not self.session_token and (not self.customer_name or not self.customer_email):
+            raise ValueError("Indica tu nombre y email, o inicia sesión para continuar")
+        return self
 
     @field_validator("customer_name", "customer_email")
     @classmethod
@@ -58,6 +65,7 @@ class CustomerAccountComplete(BaseModel):
 class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     field_key: str | None = Field(default=None, max_length=64)
+    session_token: str | None = Field(default=None, min_length=20, max_length=240)
 
 
 def _blueprint(conn: Any, tenant_id: UUID, job_type_id: UUID) -> dict[str, Any]:
@@ -392,6 +400,21 @@ def _issue_customer_session(conn: Any, tenant_id: UUID, customer_id: UUID) -> st
     return token
 
 
+def _customer_for_session(conn: Any, tenant_id: UUID, token: str | None) -> Any | None:
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return conn.execute(
+        """
+        select c.id, c.name, c.email
+        from public.horekia_customer_sessions s
+        join public.horekia_customers c on c.tenant_id = s.tenant_id and c.id = s.customer_id
+        where s.tenant_id = %s and s.token_hash = %s and s.expires_at > now()
+        """,
+        (tenant_id, token_hash),
+    ).fetchone()
+
+
 def _quote_response(quote: dict[str, Any], calculation: dict[str, Any]) -> dict[str, Any]:
     return {"id": str(quote["id"]), "status": quote["status"], "currency": quote["currency"], "subtotal": str(quote["subtotal"]), "tax_amount": str(quote["tax_amount"]), "total": str(quote["total"]), "lines": calculation["lines"]}
 
@@ -440,10 +463,14 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
 def start_conversation(tenant_slug: str, payload: ConversationStart, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
     with db_session(settings) as conn:
         tenant, service = _tenant_and_service(conn, tenant_slug, payload.job_type_slug)
-        customer = conn.execute(
-            "insert into public.horekia_customers (tenant_id, name, email, phone) values (%s, %s, %s, %s) returning id",
-            (tenant["id"], payload.customer_name, payload.customer_email, payload.customer_phone),
-        ).fetchone()
+        customer = _customer_for_session(conn, tenant["id"], payload.session_token)
+        if payload.session_token and not customer:
+            raise HTTPException(status_code=401, detail="La sesión ha caducado. Vuelve a identificarte para continuar")
+        if not customer:
+            customer = conn.execute(
+                "insert into public.horekia_customers (tenant_id, name, email, phone) values (%s, %s, %s, %s) returning id",
+                (tenant["id"], payload.customer_name, payload.customer_email, payload.customer_phone),
+            ).fetchone()
         customer_id = customer["id"]
         blueprint = _blueprint(conn, tenant["id"], service["id"])
         fields = _chat_fields(blueprint)
@@ -515,9 +542,13 @@ def get_conversation(request_id: UUID, settings: Settings = Depends(get_settings
 def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
     with db_session(settings) as conn:
         tenant_id = POC_TENANT_ID
-        request = conn.execute("select id, job_type_id, status, intake_data from public.horekia_requests where tenant_id = %s and id = %s", (tenant_id, request_id)).fetchone()
+        request = conn.execute("select id, customer_id, job_type_id, status, intake_data from public.horekia_requests where tenant_id = %s and id = %s", (tenant_id, request_id)).fetchone()
         if not request:
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        session_customer = _customer_for_session(conn, tenant_id, payload.session_token)
+        if payload.session_token and not session_customer:
+            raise HTTPException(status_code=401, detail="La sesión ha caducado. Vuelve a identificarte para continuar")
+        authenticated_customer = bool(session_customer and session_customer["id"] == request["customer_id"])
         if request["status"] == "closed":
             return {"request_id": str(request_id), "status": "closed", "reply": "Esta solicitud se ha cerrado porque la ubicación indicada está fuera de nuestro radio de actuación.", "field": None, "intake_data": request["intake_data"]}
         service = conn.execute("select id, name, slug from public.horekia_job_types where tenant_id = %s and id = %s", (tenant_id, request["job_type_id"])).fetchone()
@@ -602,4 +633,10 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         reply = f"He preparado tu solicitud de presupuesto de {service['name']}. Para consultar el importe y acceder al presupuesto, solo falta crear una contraseña para tu cuenta."
         conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"quote_id": str(quote["id"]), "calculation": calculation}), Jsonb({"source": "calculator"})))
-        return {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake, "quote_available": True, "quote_id": str(quote["id"])}
+        response = {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake}
+        if authenticated_customer:
+            response["quote"] = _quote_response(quote, calculation)
+        else:
+            response["quote_available"] = True
+            response["quote_id"] = str(quote["id"])
+        return response
