@@ -27,7 +27,7 @@ La sesión actual puede escribir en `.git` para las operaciones locales necesari
 
 Se necesitan Git, una versión compatible de Python y Node, yarn y Supabase CLI. Docker Compose se conserva para la entrega llave en mano y la validación en CI o en un entorno controlado; no se usa Docker/Supabase local en este macOS para evitar sobrecargarlo. Las versiones objetivo se fijan en Fase 1.
 
-No copiar credenciales de otros proyectos. El `.env` local ya existe; en una copia nueva se puede crear desde `.env.example` y completar las credenciales del proyecto. Mantener `.env` sin seguimiento de Git. Gemini está configurado para uso real y alimenta el asistente interno de documentación. El chatbot público y el cálculo siguen un flujo guiado determinista; nunca exponer `DATABASE_URL` mediante variables `EXPO_PUBLIC_`.
+No copiar credenciales de otros proyectos. El `.env` local ya existe; en una copia nueva se puede crear desde `.env.example` y completar las credenciales del proyecto. Mantener `.env` sin seguimiento de Git. Gemini está configurado para uso real y alimenta tanto el asistente interno de documentación como las aclaraciones contextuales del chatbot público. El cálculo sigue siendo determinista; nunca exponer `DATABASE_URL` mediante variables `EXPO_PUBLIC_`.
 
 ## Verificación actual
 

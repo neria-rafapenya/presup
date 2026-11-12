@@ -1,10 +1,15 @@
 """Public tenant chat API, deliberately separate from the backoffice help chat."""
 
 from decimal import Decimal
+import json
+import ssl
 from typing import Any
+import urllib.error
+import urllib.request
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+import certifi
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
@@ -154,6 +159,63 @@ def _friendly_retry(field: dict[str, Any]) -> str:
     return f"Gracias. Para continuar necesito que me indiques {label}."
 
 
+def _ask_gemini_public(
+    *,
+    service_name: str,
+    field: dict[str, Any],
+    user_message: str,
+    settings: Settings,
+) -> str | None:
+    """Answer a public clarification without giving Gemini pricing authority."""
+
+    if settings.ai_mock or not settings.gemini_api_key:
+        return None
+    model = settings.gemini_model.removeprefix("models/")
+    field_context = {
+        "label": field.get("label"),
+        "type": field.get("type"),
+        "unit": field.get("unit"),
+        "options": field.get("options", []),
+        "help_text": field.get("help_text"),
+    }
+    system = (
+        "Eres el asistente conversacional de una empresa que prepara presupuestos. "
+        "Estás ayudando a un cliente que no ha respondido de forma inequívoca a una pregunta. "
+        "Responde en español, con tono cercano, breve y claro. Explica qué significa la pregunta "
+        "si el cliente pide aclaración y vuelve a pedir el dato. No inventes precios, no calcules "
+        "importes y no cambies de servicio. Si el mensaje no es una aclaración, formula la pregunta "
+        "de forma natural. Devuelve únicamente el texto que verá el cliente, sin encabezados técnicos."
+    )
+    prompt = json.dumps(
+        {
+            "servicio": service_name,
+            "pregunta_actual": field_context,
+            "mensaje_cliente": user_message,
+        },
+        ensure_ascii=False,
+    )
+    payload = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 240},
+    }
+    request = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key},
+        method="POST",
+    )
+    try:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(request, timeout=20, context=ssl_context) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+        return None
+    parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    answer = "\n".join(part.get("text", "") for part in parts if part.get("text"))
+    return answer.strip() or None
+
+
 def _next_missing(fields: list[dict[str, Any]], intake: dict[str, Any]) -> dict[str, Any] | None:
     return next((field for field in fields if field.get("required") and field["key"] not in intake), None)
 
@@ -287,7 +349,12 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         if field:
             value = _coerce_field(field, payload.content)
             if value is None:
-                reply = _friendly_retry(field)
+                reply = _ask_gemini_public(
+                    service_name=service["name"],
+                    field=field,
+                    user_message=payload.content,
+                    settings=settings,
+                ) or _friendly_retry(field)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "intake_data": intake}
             intake[field["key"]] = value

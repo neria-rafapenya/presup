@@ -41,7 +41,7 @@ docker compose -f infra/docker-compose.yml config
 docker compose -f infra/docker-compose.yml up --build api
 ```
 
-Las credenciales no se versionan. El entorno de trabajo mantiene `AI_MOCK=false` y modelos Gemini configurados para uso real; el backoffice actual no realiza llamadas Gemini. No se usa Docker ni Supabase local en este macOS.
+Las credenciales no se versionan. El entorno de trabajo mantiene `AI_MOCK=false` y modelos Gemini configurados para uso real; la ayuda interna y las aclaraciones del chat público pueden usar Gemini. No se usa Docker ni Supabase local en este macOS.
 
 ## Cierre
 
@@ -59,4 +59,4 @@ Fase 1 queda cerrada para el alcance de esta POC:
 - Flujo interno probado: bandeja de peticiones, detalle con mensajes, revisión y cambio de estado de presupuesto.
 - El asistente flotante de documentación sigue siendo un módulo independiente del chatbot público; usa el contexto controlado de documentación y Gemini.
 
-Fuera de esta POC quedan Supabase Auth, Storage compartido, subida de adjuntos desde el chat, envío de PDF/correo y despliegue. El chat público actual es un flujo guiado por la ficha y el motor determinista; la interpretación libre con Gemini para conversaciones públicas queda como siguiente incremento. La prueba usa datos ficticios y no debe considerarse una tarifa real.
+Fuera de esta POC quedan Supabase Auth, Storage compartido, subida de adjuntos desde el chat, envío de PDF/correo y despliegue. El chat público combina Gemini para aclaraciones contextuales y lenguaje natural con la ficha y el motor determinista para capturar datos y calcular importes. La prueba usa datos ficticios y no debe considerarse una tarifa real.
