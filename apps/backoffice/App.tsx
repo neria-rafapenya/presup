@@ -370,11 +370,11 @@ export default function App() {
           <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); navigate("wizard"); }} />
           <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
-          <NavButton label="Servicios y fichas" active={screen === "services" || screen === "designer"} onPress={() => navigate("services")} />
+          <NavButton label="Servicios y fichas" active={screen === "services" || screen === "designer" || screen === "knowledge"} onPress={() => navigate("services")} />
           <View style={styles.subnav}>
             <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); navigate("designer", designerService?.id ?? undefined); }} />
+            <NavButton label="Base de conocimiento" child active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           </View>
-          <NavButton label="Base de conocimiento" active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => navigate("quotes")} />
         </View>
