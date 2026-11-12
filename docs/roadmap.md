@@ -225,6 +225,7 @@ No se fijan fechas ni costes sin conocer el estado real del repositorio y el ent
 
 ## 6. Decisiones diferidas, sin bloquear el roadmap
 
+- **Opciones enriquecidas en preguntas de tipo Opción:** permitir que cada opción del patrón tenga una imagen, un texto descriptivo y una ayuda contextual. En el backoffice se configurará junto a cada valor y en el chat público se mostrará mediante tooltip al pasar el cursor, o mediante una interacción equivalente en móvil. Ejemplo: al elegir el tipo de tela, mostrar algodón, rafia y lona con una imagen y una breve explicación.
 - Comprobar repositorio, .env y cualquier DECISIONES.md existente durante Fase 0.
 - Confirmar con la empresa el alcance de catálogos, tarifas, impuestos, políticas y formatos reales antes de cargar datos de producción.
 - Elegir modelos y dimensión de embeddings de forma coherente con pgvector antes de activarlos.
