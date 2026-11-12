@@ -4,5 +4,5 @@
   <rect width="960" height="220" rx="24" fill="#17332D"/>
   <rect x="46" y="46" width="129" height="129" rx="27" fill="#7A2638"/>
   <path fill="#FFFFFF" d="M80.5 69h21v82.5h-21zM119.5 69h21v82.5h-21zM97 100h27v21H97z"/>
-  <text x="235" y="143" fill="#FFFFFF" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="78" font-weight="900" letter-spacing="6">HOREKIA</text>
+  <text x="235" y="143" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="78" font-weight="900" letter-spacing="6">HOREKIA</text>
 </svg>
