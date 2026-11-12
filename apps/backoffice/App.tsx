@@ -64,7 +64,7 @@ type BlueprintItem = { sku: string; name: string; description?: string; unit: st
 type CatalogAttribute = { label: string; value: string };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
-type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
+type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }>; replace?: boolean };
 type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "cleaning" | "gardening" | "photography" | "transport" | "it_support" | "consulting" | "training" | "maintenance";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -441,14 +441,16 @@ export default function App() {
         });
       }
       const current = await api<ServiceBlueprint>(`/api/v1/backoffice/job-types/${service.id}/blueprint`);
-      const fields = new Map((current.fields ?? []).map((field) => [field.key, field]));
-      payload.fields.forEach((field) => fields.set(field.key, field));
-      const items = new Map((current.items ?? []).map((item) => [item.sku, item]));
-      payload.items.forEach((item) => items.set(item.sku, item));
-      const rules = new Map((current.rules ?? []).map((rule) => [rule.code, rule]));
-      payload.rules.forEach((rule) => rules.set(rule.code, rule));
-      const measures = new Map((current.measures ?? []).map((measure) => [measure.code, measure]));
-      payload.measures.forEach((measure) => measures.set(measure.code, measure));
+      const fields = payload.replace ? payload.fields : [...new Map((current.fields ?? []).map((field) => [field.key, field])).values(), ...payload.fields.filter((field) => !(current.fields ?? []).some((currentField) => currentField.key === field.key))];
+      const items = payload.replace ? payload.items : [...new Map((current.items ?? []).map((item) => [item.sku, item])).values(), ...payload.items.filter((item) => !(current.items ?? []).some((currentItem) => currentItem.sku === item.sku))];
+      const rules = payload.replace ? payload.rules : [...new Map((current.rules ?? []).map((rule) => [rule.code, rule])).values(), ...payload.rules.filter((rule) => !(current.rules ?? []).some((currentRule) => currentRule.code === rule.code))];
+      const measures = payload.replace ? payload.measures : [...new Map((current.measures ?? []).map((measure) => [measure.code, measure])).values(), ...payload.measures.filter((measure) => !(current.measures ?? []).some((currentMeasure) => currentMeasure.code === measure.code))];
+      if (!payload.replace) {
+        payload.fields.forEach((field) => { const index = fields.findIndex((currentField) => currentField.key === field.key); if (index >= 0) fields[index] = field; });
+        payload.items.forEach((item) => { const index = items.findIndex((currentItem) => currentItem.sku === item.sku); if (index >= 0) items[index] = item; });
+        payload.rules.forEach((rule) => { const index = rules.findIndex((currentRule) => currentRule.code === rule.code); if (index >= 0) rules[index] = rule; });
+        payload.measures.forEach((measure) => { const index = measures.findIndex((currentMeasure) => currentMeasure.code === measure.code); if (index >= 0) measures[index] = measure; });
+      }
       await api(`/api/v1/backoffice/job-types/${service.id}/blueprint`, {
         method: "PUT",
         body: JSON.stringify({ fields: [...fields.values()], items: [...items.values()], rules: [...rules.values()], measures: [...measures.values()] }),
@@ -773,7 +775,8 @@ function Documentation() {
       <Text style={styles.documentationText}>Valores admitidos para kind: product, category, sales_pattern, policy, faq, document y other. Las columnas adicionales se conservan como metadatos.</Text>
       <Text style={styles.documentationText}>Para productos se recomienda completar code, category, unit, base_price y currency. El precio debe ser numérico, sin el símbolo de moneda.</Text>
       <Text style={styles.documentationText}>Para crear o ampliar un servicio usa el bloque Importar patrón de servicio. Ese CSV utiliza service_slug y record_type con valores service, field, item, rule o measure. Las filas se fusionan por code con el patrón existente.</Text>
-      <Text style={styles.codeBlock}>service_slug,record_type,code,title,content,type,options,required,unit,base_price,currency,priority,definition</Text>
+      <Text style={styles.codeBlock}>service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata</Text>
+      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, catálogo, reglas, medidas, opciones, límites, ejemplos y metadatos. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
     </DocumentationSection>
 
     <DocumentationSection number="5" title="Ejemplo de producto">
@@ -896,6 +899,7 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
   const [payload, setPayload] = useState<ServiceImportData | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [importAlert, setImportAlert] = useState<string | null>(null);
+  const [replaceExisting, setReplaceExisting] = useState(false);
 
   const chooseCsv = () => {
     if (typeof document === "undefined") return;
@@ -922,10 +926,11 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
       setImportAlert(message);
       return;
     }
-    if (await onImport(payload)) {
+    if (await onImport({ ...payload, replace: replaceExisting })) {
       setPayload(null);
       setSourceName("");
       setParseError(null);
+      setReplaceExisting(false);
     } else {
       setImportAlert("No se ha podido importar el patrón de servicio. Revisa los códigos y el JSON de las reglas.");
     }
@@ -933,9 +938,11 @@ function ServiceCsvImport({ services, onImport, saving }: { services: JobType[];
 
   return <View style={styles.serviceImportBox}>
     <Text style={styles.fieldLabel}>Importar patrón de servicio</Text>
-    <Text style={styles.listMeta}>Usa un CSV explícito para crear o ampliar un servicio con filas service, field, item, rule y measure. Las filas se fusionan por código y no borran el patrón existente.</Text>
+    <Text style={styles.listMeta}>Usa un CSV explícito para crear o ampliar un servicio con filas service, field, item, rule y measure. Por defecto las filas se fusionan por código y no borran el patrón existente.</Text>
     <Pressable style={styles.secondaryButton} onPress={chooseCsv}><Text style={styles.secondaryLabel}>{sourceName || "Seleccionar CSV de patrón"}</Text></Pressable>
     {payload ? <Text style={styles.wizardText}>Servicio: {payload.serviceSlug} · {payload.fields.length} pregunta(s) · {payload.items.length} concepto(s) · {payload.rules.length} regla(s) · {payload.measures.length} medida(s)</Text> : null}
+    <Toggle label="Reemplazar el patrón completo" hint="Actívalo solo si el CSV contiene todo el servicio exportado. Eliminará del servicio los elementos que no estén en el archivo." value={replaceExisting} onPress={() => setReplaceExisting((current) => !current)} />
+    {replaceExisting ? <Text style={styles.confirmWarning}>El modo reemplazo eliminará preguntas, conceptos, reglas o medidas que no aparezcan en este CSV.</Text> : null}
     <Pressable style={styles.primaryButton} onPress={() => void importService()} disabled={saving || !payload || Boolean(parseError)}><Text style={styles.primaryLabel}>{saving ? "Importando patrón…" : "Importar patrón de servicio"}</Text></Pressable>
     <ImportAlertModal message={importAlert} onClose={() => setImportAlert(null)} />
   </View>;
@@ -1105,7 +1112,13 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
   let serviceName: string | undefined;
   let serviceDescription: string | undefined;
 
-  for (const record of records) {
+  const orderedRecords = [...records].sort((left, right) => {
+    const leftType = (left.record_type || left.tipo || "").toLowerCase();
+    const rightType = (right.record_type || right.tipo || "").toLowerCase();
+    if (leftType !== "field" || rightType !== "field") return 0;
+    return (Number(left.order) || 0) - (Number(right.order) || 0);
+  });
+  for (const record of orderedRecords) {
     const recordType = (record.record_type || record.tipo || "").toLowerCase();
     if (!["service", "field", "item", "product", "rule", "measure"].includes(recordType)) return { error: `Tipo de registro no admitido: ${recordType || "vacío"}.` };
     if (recordType === "service") {
@@ -1125,9 +1138,13 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
     } else if (recordType === "item" || recordType === "product") {
       const price = record.base_price ? Number(record.base_price.replace(",", ".")) : undefined;
       if (record.base_price && !Number.isFinite(price)) return { error: `Precio no válido para ${record.code}.` };
-      items.push({ sku: record.code, name: record.title || record.code, description: record.content || undefined, unit: record.unit || "unit", base_price: Number.isFinite(price) ? price : undefined, currency: (record.currency || "EUR").toUpperCase(), metadata: {} });
+      let metadata: Record<string, unknown> = {};
+      if (record.metadata) {
+        try { const parsed = JSON.parse(record.metadata) as unknown; if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) metadata = parsed as Record<string, unknown>; } catch { return { error: `El metadata de ${record.code} no contiene JSON válido.` }; }
+      }
+      items.push({ sku: record.code, name: record.title || record.code, description: record.content || undefined, unit: record.unit || "unit", base_price: Number.isFinite(price) ? price : undefined, currency: (record.currency || "EUR").toUpperCase(), metadata });
     } else if (recordType === "rule") {
-      const kind = record.rule_kind || record.kind || "formula";
+      const kind = record.rule_kind || record.kind || record.type || "formula";
       if (!["unit_price", "factor", "surcharge", "minimum", "formula"].includes(kind)) return { error: `Tipo de regla no admitido para ${record.code}: ${kind}.` };
       let definition: Record<string, unknown> = {};
       try { definition = record.definition ? JSON.parse(record.definition) as Record<string, unknown> : {}; } catch { return { error: `El definition de ${record.code} no contiene JSON válido.` }; }
@@ -1448,6 +1465,31 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
       setSavingBlockKey(null);
     }
   };
+  const exportService = () => {
+    if (Platform.OS !== "web") {
+      setDesignerError("La exportación CSV está disponible en la versión web del backoffice.");
+      return;
+    }
+    try {
+      const rules = ruleCards.map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
+      const measures = JSON.parse(measuresText) as ServiceBlueprint["measures"];
+      if (!Array.isArray(measures)) throw new Error("Las medidas deben ser una lista JSON.");
+      const csv = serviceBlueprintToCsv(service, { ...draft, rules, measures });
+      const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `servicio-${service.slug}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setDesignerError(null);
+      setSaveMessage("CSV exportado con el patrón completo del servicio.");
+    } catch (error) {
+      setDesignerError(error instanceof Error ? error.message : "No se ha podido exportar el patrón.");
+    }
+  };
   const requestClose = () => {
     if (designerDirty) {
       setDiscardConfirmOpen(true);
@@ -1465,7 +1507,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
   const designerPanel = (
         <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
-          <View style={styles.modalHeader}><View><Text style={styles.designerContextTitle}>DISEÑAR SERVICIO</Text><Text style={styles.designerServiceName}>{service.name}</Text></View></View>
+          <View style={styles.modalHeader}><View><Text style={styles.designerContextTitle}>DISEÑAR SERVICIO</Text><Text style={styles.designerServiceName}>{service.name}</Text></View><Pressable style={styles.secondaryButton} onPress={exportService}><Text style={styles.secondaryLabel}>Exportar CSV</Text></Pressable></View>
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
           <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
             <View style={styles.templateChoices}>
@@ -1501,6 +1543,23 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
 function emptyBlueprint(): ServiceBlueprint {
   return { fields: [], items: [], rules: [], measures: [] };
+}
+
+const SERVICE_CSV_HEADERS = ["service_slug", "record_type", "order", "code", "title", "content", "type", "options", "required", "unit", "min", "max", "example", "base_price", "currency", "priority", "rule_kind", "definition", "expression", "metadata"];
+
+function csvCell(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function serviceBlueprintToCsv(service: JobType, blueprint: ServiceBlueprint): string {
+  const rows: unknown[][] = [[service.slug, "service", "", "", service.name, service.description ?? "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]];
+  blueprint.fields.forEach((field, index) => rows.push([service.slug, "field", index + 1, field.key, field.label, field.help_text ?? "", field.type, field.options.join("|"), field.required, field.unit ?? "", field.min ?? "", field.max ?? "", field.example ?? "", "", "", "", "", "", "", ""]));
+  blueprint.items.forEach((item, index) => rows.push([service.slug, "item", index + 1, item.sku, item.name, item.description ?? "", "", "", "", item.unit, "", "", "", item.base_price ?? "", item.currency, "", "", "", "", JSON.stringify(item.metadata ?? {})]));
+  blueprint.rules.forEach((rule, index) => rows.push([service.slug, "rule", index + 1, rule.code, "", "", "", "", "", "", "", "", "", "", "", rule.priority, rule.kind, JSON.stringify(rule.definition), "", ""]));
+  blueprint.measures.forEach((measure, index) => rows.push([service.slug, "measure", index + 1, measure.code, "", "", "", "", "", "", "", "", "", "", "", "", "", "", JSON.stringify(measure.expression), ""]));
+  return [SERVICE_CSV_HEADERS, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
 function cloneBlueprint(blueprint: ServiceBlueprint): ServiceBlueprint {

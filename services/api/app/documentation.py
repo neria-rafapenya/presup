@@ -29,13 +29,18 @@ CSV de conocimiento:
 
 CSV de patrón de servicio:
 - Se importa desde Base de conocimiento con el bloque Importar patrón de servicio.
-- Columnas: service_slug, record_type, code, title, content, type, options, required,
-  unit, base_price, currency, priority, definition.
+- Columnas: service_slug, record_type, order, code, title, content, type, options, required,
+  unit, min, max, example, base_price, currency, priority, rule_kind, definition,
+  expression y metadata.
 - record_type puede ser service, field, item, rule o measure.
 - service crea el servicio si no existe y title contiene su nombre.
 - field añade una pregunta, item añade un concepto al servicio, rule añade una regla y
   measure añade una medida calculada.
 - Las filas se fusionan por code y no borran elementos existentes.
+- Desde el Diseñador se puede exportar el servicio completo con el orden de las preguntas,
+  opciones, límites, ejemplos, catálogo, reglas, medidas y metadatos.
+- La importación mantiene la fusión segura por defecto. El backoffice ofrece un modo
+  explícito de reemplazo para que también se eliminen los elementos que no estén en el CSV.
 - Las definiciones de rule y measure deben ser JSON válido.
 
 Regla de cálculo:
