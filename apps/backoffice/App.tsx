@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "wizard" | "dashboard" | "company" | "services" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "services" | "designer" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -125,6 +125,9 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
+  const [designerService, setDesignerService] = useState<JobType | null>(null);
+  const [designerReturnScreen, setDesignerReturnScreen] = useState<Screen>("services");
+  const [wizardResumeStep, setWizardResumeStep] = useState(0);
   const [knowledgeSummary, setKnowledgeSummary] = useState<KnowledgeSummary>({ total: 0, by_kind: [] });
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -290,6 +293,17 @@ export default function App() {
     }
   };
 
+  const openDesigner = (service: JobType, returnScreen: Screen) => {
+    setDesignerReturnScreen(returnScreen);
+    setWizardResumeStep(returnScreen === "wizard" ? 1 : 0);
+    setDesignerService(service);
+    setScreen("designer");
+  };
+  const closeDesigner = () => {
+    setDesignerService(null);
+    setScreen(designerReturnScreen === "designer" ? "services" : designerReturnScreen);
+  };
+
   return (
     <View style={styles.shell}>
       <StatusBar style="dark" />
@@ -297,10 +311,11 @@ export default function App() {
         <Text style={styles.brand}>HOREKIA</Text>
         <Text style={styles.brandSub}>BACKOFFICE</Text>
         <View style={styles.nav}>
-          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => setScreen("wizard")} />
+          <NavButton label="Wizard" active={screen === "wizard"} onPress={() => { setWizardResumeStep(0); setScreen("wizard"); }} />
           <NavButton label="Resumen" active={screen === "dashboard"} onPress={() => setScreen("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => setScreen("company")} />
           <NavButton label="Servicios y fichas" active={screen === "services"} onPress={() => setScreen("services")} />
+          <NavButton label="Diseñador de servicios" active={screen === "designer"} onPress={() => { setDesignerReturnScreen("services"); setScreen("designer"); }} />
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => setScreen("requests")} />
           <NavButton label="Presupuestos" active={screen === "quotes"} onPress={() => setScreen("quotes")} />
         </View>
@@ -310,37 +325,43 @@ export default function App() {
         </View>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
-        <View style={styles.topbar}>
-          <View>
-            <Text style={styles.kicker}>OPERACIÓN</Text>
-            <Text style={styles.heading}>{screenTitle(screen)}</Text>
-          </View>
-          <Pressable style={styles.refreshButton} onPress={() => void load()}>
-            <Text style={styles.refreshLabel}>Actualizar</Text>
-          </Pressable>
+      {screen === "designer" ? (
+        <View style={styles.designerWorkspace}>
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => setDesignerService(service)} onOpenServices={() => setScreen("services")} />}
         </View>
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+          <View style={styles.topbar}>
+            <View>
+              <Text style={styles.kicker}>OPERACIÓN</Text>
+              <Text style={styles.heading}>{screenTitle(screen)}</Text>
+            </View>
+            <Pressable style={styles.refreshButton} onPress={() => void load()}>
+              <Text style={styles.refreshLabel}>Actualizar</Text>
+            </Pressable>
+          </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        {loading && (!summary || !profile) ? (
-          <ActivityIndicator color="#147d68" size="large" style={styles.loader} />
-        ) : summary && profile ? (
-          <>
-            {screen === "wizard" ? (
-              <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onImportKnowledge={importKnowledge} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
-            ) : null}
-            {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
-            {screen === "company" ? (
-              <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
-            ) : null}
-            {screen === "services" ? (
-              <Services services={services} onCreate={createService} onDelete={deleteService} onLoadBlueprint={loadBlueprint} onSaveBlueprint={saveBlueprint} saving={saving} />
-            ) : null}
-            {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
-            {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
-          </>
-        ) : null}
-      </ScrollView>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {loading && (!summary || !profile) ? (
+            <ActivityIndicator color="#147d68" size="large" style={styles.loader} />
+          ) : summary && profile ? (
+            <>
+              {screen === "wizard" ? (
+                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => setScreen("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} saving={saving} />
+              ) : null}
+              {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
+              {screen === "company" ? (
+                <Company summary={summary} setSummary={setSummary} onSave={saveSettings} saving={saving} />
+              ) : null}
+              {screen === "services" ? (
+                <Services services={services} onCreate={createService} onDelete={deleteService} onDesignService={(service) => openDesigner(service, "services")} saving={saving} />
+              ) : null}
+              {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
+              {screen === "quotes" ? <ModulePlaceholder title="Presupuestos" text="El motor determinista y la revisión de presupuestos se incorporarán después." /> : null}
+            </>
+          ) : null}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -373,10 +394,9 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onImportKnowledge, onLoadBlueprint, onSaveBlueprint, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
-  const [step, setStep] = useState(0);
+function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
+  const [step, setStep] = useState(initialStep);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
-  const [designerService, setDesignerService] = useState<JobType | null>(null);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
@@ -405,7 +425,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <>
             <Text style={styles.panelTitle}>2. Oferta y servicios</Text>
             <Text style={styles.wizardText}>Define aquí los productos o servicios que tu empresa quiere presupuestar. Si tienes una imprenta, una empresa de reformas o un taller mecánico, crea cada tipo de trabajo que ofreces y después configura sus preguntas, opciones y precios. Así la IA tendrá el contexto necesario para entender la petición, pedir los datos que falten y responder con un presupuesto conciso.</Text>
-            {services.map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
+            {services.map((service) => <View style={styles.serviceSummaryRow} key={service.id}><Text style={styles.wizardBullet}>• {service.name}</Text><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesignService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
             <Pressable style={styles.secondaryButton} onPress={() => setServiceModalOpen(true)}><Text style={styles.secondaryLabel}>Añadir servicio</Text></Pressable>
           </>
         ) : null}
@@ -429,8 +449,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
         </View>
       </View>
       <ServiceModal visible={serviceModalOpen} services={services} onClose={() => setServiceModalOpen(false)} onCreate={onCreateService} saving={saving} />
-      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDeleteService(serviceToDelete.id)) { if (designerService?.id === serviceToDelete.id) setDesignerService(null); setServiceToDelete(null); } }} saving={saving} />
-      {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
+      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDeleteService(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} />
     </View>
   );
 }
@@ -594,9 +613,8 @@ function Company({ summary, setSummary, onSave, saving }: { summary: Summary; se
   );
 }
 
-function Services({ services, onCreate, onDelete, onLoadBlueprint, onSaveBlueprint, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onLoadBlueprint: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSaveBlueprint: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
+function Services({ services, onCreate, onDelete, onDesignService, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; saving: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
-  const [designerService, setDesignerService] = useState<JobType | null>(null);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   return (
     <View>
@@ -608,13 +626,16 @@ function Services({ services, onCreate, onDelete, onLoadBlueprint, onSaveBluepri
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Servicios configurados</Text>
-        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => setDesignerService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
+        {services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesignService(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setServiceToDelete(service)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
       </View>
       <ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
-      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) { if (designerService?.id === serviceToDelete.id) setDesignerService(null); setServiceToDelete(null); } }} saving={saving} />
-      {designerService ? <ServiceDesignerModal visible service={designerService} onClose={() => setDesignerService(null)} onLoad={onLoadBlueprint} onSave={onSaveBlueprint} saving={saving} /> : null}
+      <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} />
     </View>
   );
+}
+
+function DesignerServicePicker({ services, onDesign, onOpenServices }: { services: JobType[]; onDesign: (service: JobType) => void; onOpenServices: () => void }) {
+  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Selecciona un servicio para editar sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><Pressable style={styles.secondaryButton} onPress={onOpenServices}><Text style={styles.secondaryLabel}>Gestionar servicios</Text></Pressable></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text>{services.length ? services.map((service) => <View style={styles.listRow} key={service.id}><View><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><Pressable style={styles.primaryButton} onPress={() => onDesign(service)}><Text style={styles.primaryLabel}>Diseñar</Text></Pressable></View>) : <Text style={styles.emptyText}>Todavía no hay servicios. Crea uno desde «Servicios y fichas».</Text>}</View></View>;
 }
 
 function TutorialVideo() {
@@ -664,7 +685,7 @@ function ServiceModal({ visible, services, onClose, onCreate, saving }: { visibl
   );
 }
 
-function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, saving }: { visible: boolean; service: JobType; onClose: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean }) {
+function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; onClose: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
   const [draft, setDraft] = useState<ServiceBlueprint>(emptyBlueprint());
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
@@ -826,12 +847,10 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     onClose();
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={requestClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.designerCard}>
+  const designerPanel = (
+        <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
           <View style={styles.modalHeader}><View><Text style={styles.panelTitle}>Diseñar servicio</Text><Text style={styles.listMeta}>{service.name}</Text></View><Pressable onPress={requestClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
-          <ScrollView ref={designerScrollRef} style={styles.designerScroll}>
+          <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
             <Text style={styles.sectionLabel}>Empezar en blanco</Text>
             <Text style={styles.listMeta}>Los servicios nuevos empiezan sin preguntas, productos ni reglas. Añade solo los bloques que necesite tu negocio. Si te sirve, puedes cargar después una ayuda orientativa y editarla por completo.</Text>
             <View style={styles.templateChoices}>
@@ -859,9 +878,8 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
           {designerLoading ? <View style={styles.designerLoadingOverlay}><ActivityIndicator size="large" color="#258269" /><Text style={styles.designerLoadingText}>Cargando diseño…</Text></View> : null}
           {discardConfirmOpen ? <View style={styles.discardOverlay}><View style={styles.discardCard}><Text style={styles.panelTitle}>Cambios sin guardar</Text><Text style={styles.wizardText}>Has creado o modificado este patrón. Si cierras ahora, perderás los cambios.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={() => setDiscardConfirmOpen(false)}><Text style={styles.secondaryLabel}>Seguir editando</Text></Pressable><Pressable style={styles.dangerButton} onPress={discardAndClose}><Text style={styles.primaryLabel}>Salir sin guardar</Text></Pressable></View></View></View> : null}
         </View>
-      </View>
-    </Modal>
   );
+  return fullScreen ? <View style={styles.designerScreen}>{designerPanel}</View> : <Modal visible={visible} transparent animationType="fade" onRequestClose={requestClose}><View style={styles.modalBackdrop}>{designerPanel}</View></Modal>;
 }
 
 function emptyBlueprint(): ServiceBlueprint {
@@ -1146,7 +1164,7 @@ function ModulePlaceholder({ title, text }: { title: string; text: string }) {
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Resumen", company: "Empresa", services: "Servicios y fichas", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
@@ -1164,6 +1182,14 @@ const styles = StyleSheet.create({
   sidebarMuted: { color: "#d7e6dc", fontSize: 13, marginTop: 6 },
   content: { flex: 1 },
   contentInner: { padding: 42, maxWidth: 1200, width: "100%", alignSelf: "center" },
+  designerWorkspace: { flex: 1, backgroundColor: "#f6f7f5" },
+  designerScreen: { flex: 1 },
+  designerFullScreenCard: { flex: 1, width: "100%", maxWidth: "100%", maxHeight: "100%", borderRadius: 0, shadowOpacity: 0, padding: 32 },
+  designerFullScreenScroll: { maxHeight: "100%", flex: 1 },
+  designerPicker: { flex: 1, padding: 42, maxWidth: 1200, width: "100%", alignSelf: "center" },
+  designerWorkspaceHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 },
+  workspaceTitle: { color: "#17211f", fontSize: 30, fontWeight: "800", marginTop: 5 },
+  workspaceText: { color: "#526078", fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 720 },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 28 },
   kicker: { color: "#258269", fontSize: 11, fontWeight: "700", letterSpacing: 2 },
   heading: { color: "#17211f", fontSize: 32, fontWeight: "800", marginTop: 6 },
