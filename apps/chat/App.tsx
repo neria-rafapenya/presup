@@ -149,7 +149,7 @@ export default function App() {
   return <View style={styles.shell}>
     <StatusBar style="dark" />
     <ScrollView contentContainerStyle={styles.page}>
-    <View style={[styles.header, { alignItems: "center" }]}><View style={styles.headerBrand}>{Platform.OS === "web" ? createElement("img", { src: "/horekia-logo-app-new.svg?v=1", alt: "HorekIA", style: styles.brandImage }) : <Text style={styles.brand}>HOREKIA</Text>}</View><Text style={styles.headerHint}>Solicita tu presupuesto</Text></View>
+    <View style={[styles.header, { alignItems: "center" }]}><View style={styles.headerBrand}>{Platform.OS === "web" ? createElement("img", { src: "/horekia-logo-app-new.svg?v=1", alt: "HorekIA", style: styles.brandImage }) : <Text style={styles.brand}>HOREKIA</Text>}</View><Text style={styles.headerHint}>Prepara tu presupuesto paso a paso</Text></View>
       <View style={styles.card}>
         {!selectedService ? <>
           <Text style={styles.title}>¿Qué necesitas presupuestar?</Text><Text style={styles.subtitle}>Elige un servicio y te haré las preguntas necesarias para preparar tu solicitud.</Text>
