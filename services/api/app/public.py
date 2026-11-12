@@ -136,7 +136,12 @@ def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tupl
 def _field_question(field: dict[str, Any], prompt_index: int = 0) -> str:
     label = field["label"].lower()
     if field["label"].rstrip().endswith("?"):
-        return field["label"].rstrip()
+        question = field["label"].rstrip()
+        options = field.get("options") or []
+        if field.get("type") == "choice" and options and not all(option.casefold() in question.casefold() for option in options):
+            choices = ", ".join(f"**{option}**" for option in options[:-1]) + f" o **{options[-1]}**"
+            return f"{question} Puedes elegir entre {choices}."
+        return question
     if field.get("type") == "choice" and field.get("options"):
         subject = label.removeprefix("tipo de ")
         options = field["options"]
