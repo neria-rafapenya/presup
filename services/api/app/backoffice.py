@@ -110,6 +110,11 @@ class KnowledgeImport(BaseModel):
     rows: list[KnowledgeRow] = Field(min_length=1, max_length=1000)
 
 
+class KnowledgeEntryPatch(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    content: str = Field(max_length=10000)
+
+
 def database_error(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -569,6 +574,68 @@ def knowledge_entries(settings: Settings = Depends(get_settings)) -> list[dict[s
                 """,
                 (POC_TENANT_ID,),
             ).fetchall()
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.patch("/knowledge/entries/{entry_id}")
+def update_knowledge_entry(entry_id: UUID, payload: KnowledgeEntryPatch, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            entry = conn.execute(
+                """
+                update public.horekia_knowledge_entries
+                set title = %s, content = %s, updated_at = now()
+                where tenant_id = %s and id = %s and status = 'active'
+                returning id, kind, title, content, metadata, source_type, source_name, created_at
+                """,
+                (payload.title.strip(), payload.content.strip(), POC_TENANT_ID, entry_id),
+            ).fetchone()
+            if not entry:
+                raise HTTPException(status_code=404, detail="Entrada de conocimiento no encontrada")
+            if entry["kind"] == "product":
+                conn.execute(
+                    """
+                    update public.horekia_items
+                    set name = %s, description = %s, updated_at = now()
+                    where tenant_id = %s and metadata->>'knowledge_entry_id' = %s and status = 'active'
+                    """,
+                    (payload.title.strip(), payload.content.strip() or None, POC_TENANT_ID, str(entry_id)),
+                )
+            return entry
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.delete("/knowledge/entries/{entry_id}")
+def delete_knowledge_entry(entry_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            entry = conn.execute(
+                """
+                update public.horekia_knowledge_entries
+                set status = 'archived', updated_at = now()
+                where tenant_id = %s and id = %s and status = 'active'
+                returning id, kind
+                """,
+                (POC_TENANT_ID, entry_id),
+            ).fetchone()
+            if not entry:
+                raise HTTPException(status_code=404, detail="Entrada de conocimiento no encontrada")
+            if entry["kind"] == "product":
+                conn.execute(
+                    """
+                    update public.horekia_items
+                    set status = 'archived', updated_at = now()
+                    where tenant_id = %s and metadata->>'knowledge_entry_id' = %s and status = 'active'
+                    """,
+                    (POC_TENANT_ID, str(entry_id)),
+                )
+            return {"id": entry["id"], "kind": entry["kind"], "status": "archived"}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise database_error(exc) from exc
 

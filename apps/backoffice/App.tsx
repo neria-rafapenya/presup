@@ -320,6 +320,36 @@ export default function App() {
     }
   };
 
+  const updateKnowledgeEntry = async (entryId: string, patch: { title: string; content: string }) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/api/v1/backoffice/knowledge/entries/${entryId}`, { method: "PATCH", body: JSON.stringify(patch) });
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido actualizar la entrada de conocimiento.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteKnowledgeEntry = async (entryId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/api/v1/backoffice/knowledge/entries/${entryId}`, { method: "DELETE" });
+      await load();
+      return true;
+    } catch {
+      setError("No se ha podido eliminar la entrada de conocimiento.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const loadBlueprint = async (jobTypeId: string) => {
     try {
       return await api<ServiceBlueprint>(`/api/v1/backoffice/job-types/${jobTypeId}/blueprint`);
@@ -408,14 +438,14 @@ export default function App() {
           ) : summary && profile ? (
             <>
               {screen === "wizard" ? (
-                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} saving={saving} />
+                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} onUpdateKnowledgeEntry={updateKnowledgeEntry} onDeleteKnowledgeEntry={deleteKnowledgeEntry} saving={saving} />
               ) : null}
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
                 <Company summary={summary} setSummary={setSummary} profile={profile} setProfile={setProfile} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onSave={saveSettings} saving={saving} />
               ) : null}
               {screen === "knowledge" ? (
-                <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={importKnowledge} saving={saving} />
+                <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} saving={saving} />
               ) : null}
               {screen === "documentation" ? <Documentation /> : null}
               {screen === "requests" ? <ModulePlaceholder title="Peticiones" text="La bandeja de peticiones será el siguiente incremento del backoffice." /> : null}
@@ -456,7 +486,7 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean }) {
+function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, onUpdateKnowledgeEntry, onDeleteKnowledgeEntry, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdateKnowledgeEntry: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDeleteKnowledgeEntry: (entryId: string) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(initialStep);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
@@ -482,7 +512,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <Services services={services} onCreate={onCreateService} onDelete={onDeleteService} onDesignService={onDesignService} saving={saving} embedded />
         ) : null}
         {step === 2 ? (
-          <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImportKnowledge} saving={saving} embedded />
+          <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImportKnowledge} onUpdate={onUpdateKnowledgeEntry} onDelete={onDeleteKnowledgeEntry} saving={saving} embedded />
         ) : null}
         {step === 3 ? (
           <>
@@ -590,16 +620,16 @@ function DocumentationBullet({ title, text }: { title: string; text: string }) {
   return <View style={styles.documentationBullet}><Text style={styles.documentationBulletTitle}>{title}</Text><Text style={styles.documentationText}>{text}</Text></View>;
 }
 
-type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; saving: boolean };
+type KnowledgeImportProps = { knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; onImport: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdate: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDelete: (entryId: string) => Promise<boolean>; saving: boolean };
 
-function KnowledgePage({ knowledgeSummary, knowledgeEntries, onImport, saving, embedded = false }: KnowledgeImportProps & { embedded?: boolean }) {
+function KnowledgePage({ knowledgeSummary, knowledgeEntries, onImport, onUpdate, onDelete, saving, embedded = false }: KnowledgeImportProps & { embedded?: boolean }) {
   const content = <KnowledgeImport knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} onImport={onImport} saving={saving} />;
-  const table = <KnowledgeTable entries={knowledgeEntries} />;
+  const table = <KnowledgeTable entries={knowledgeEntries} onUpdate={onUpdate} onDelete={onDelete} saving={saving} />;
   if (embedded) return <View><Text style={styles.panelTitle}>3. Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}{table}</View>;
   return <View><View style={styles.panel}><Text style={styles.panelTitle}>Base de conocimiento</Text><Text style={styles.wizardText}>Carga productos, categorías, patrones de venta, políticas o documentación. Gemini podrá consultarlos como contexto; los precios que generen presupuestos seguirán siendo deterministas.</Text>{content}</View>{table}</View>;
 }
 
-function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: KnowledgeImportProps) {
+function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving }: Pick<KnowledgeImportProps, "knowledgeSummary" | "knowledgeEntries" | "onImport" | "saving">) {
   const [sourceName, setSourceName] = useState("");
   const [rows, setRows] = useState<KnowledgeRow[]>([]);
 
@@ -634,9 +664,13 @@ function KnowledgeImport({ knowledgeSummary, knowledgeEntries, onImport, saving 
   );
 }
 
-function KnowledgeTable({ entries }: { entries: KnowledgeEntry[] }) {
+function KnowledgeTable({ entries, onUpdate, onDelete, saving }: { entries: KnowledgeEntry[]; onUpdate: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDelete: (entryId: string) => Promise<boolean>; saving: boolean }) {
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingContent, setEditingContent] = useState("");
+  const [entryToDelete, setEntryToDelete] = useState<KnowledgeEntry | null>(null);
   const pageSize = 15;
   const normalizedFilter = filter.trim().toLocaleLowerCase();
   const filteredEntries = entries.filter((entry) => !normalizedFilter || `${entry.title} ${entry.kind} ${entry.source_name ?? ""} ${entry.content ?? ""}`.toLocaleLowerCase().includes(normalizedFilter));
@@ -648,14 +682,36 @@ function KnowledgeTable({ entries }: { entries: KnowledgeEntry[] }) {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  const startEditing = (entry: KnowledgeEntry) => {
+    setEditingId(entry.id);
+    setEditingTitle(entry.title);
+    setEditingContent(entry.content ?? "");
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditingTitle("");
+    setEditingContent("");
+  };
+
+  const saveEditing = async () => {
+    if (!editingId || !editingTitle.trim()) return;
+    if (await onUpdate(editingId, { title: editingTitle.trim(), content: editingContent.trim() })) cancelEditing();
+  };
+
   return <View style={styles.panel}>
     <Text style={styles.panelTitle}>Entradas importadas</Text>
     <TextInput style={styles.filterInput} value={filter} onChangeText={setFilter} placeholder="Filtrar por título, tipo, contenido o archivo…" />
     {filteredEntries.length ? <>
-      <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Entrada</Text><Text style={styles.tableHeaderLabel}>Tipo y origen</Text></View>
-      {visibleEntries.map((entry) => <View style={styles.knowledgeTableRow} key={entry.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{entry.title}</Text>{entry.content ? <Text style={styles.knowledgeExcerpt} numberOfLines={2}>{entry.content}</Text> : null}</View><View style={styles.knowledgeMeta}><Text style={styles.knowledgeKind}>{entry.kind}</Text><Text style={styles.listMeta}>{entry.source_name || "Sin origen"}</Text></View></View>)}
+      <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Entrada</Text><Text style={styles.tableHeaderLabel}>Tipo y origen</Text><Text style={styles.tableHeaderLabel}>Acciones</Text></View>
+      {visibleEntries.map((entry) => editingId === entry.id ? <View style={styles.knowledgeEditingRow} key={entry.id}>
+        <View style={styles.tableMain}><TextInput style={styles.inlineInput} value={editingTitle} onChangeText={setEditingTitle} onSubmitEditing={() => void saveEditing()} returnKeyType="done" autoFocus /><TextInput style={[styles.inlineInput, styles.inlineContentInput]} value={editingContent} onChangeText={setEditingContent} onSubmitEditing={() => void saveEditing()} returnKeyType="done" /></View>
+        <View style={styles.knowledgeMeta}><Text style={styles.knowledgeKind}>{entry.kind}</Text><Text style={styles.listMeta}>{entry.source_name || "Sin origen"}</Text></View>
+        <View style={styles.inlineActions}><Pressable style={styles.smallButton} onPress={() => void saveEditing()} disabled={saving || !editingTitle.trim()}><Text style={styles.smallButtonLabel}>{saving ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable style={styles.deleteButton} onPress={cancelEditing} disabled={saving}><Text style={styles.deleteLabel}>Cancelar</Text></Pressable></View>
+      </View> : <View style={styles.knowledgeTableRow} key={entry.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{entry.title}</Text>{entry.content ? <Text style={styles.knowledgeExcerpt} numberOfLines={2}>{entry.content}</Text> : null}</View><View style={styles.knowledgeMeta}><Text style={styles.knowledgeKind}>{entry.kind}</Text><Text style={styles.listMeta}>{entry.source_name || "Sin origen"}</Text></View><View style={styles.inlineActions}><Pressable style={styles.iconButton} onPress={() => startEditing(entry)} disabled={saving} accessibilityLabel={`Editar ${entry.title}`}><Text style={styles.iconLabel}>✎</Text></Pressable><Pressable style={styles.iconDangerButton} onPress={() => setEntryToDelete(entry)} disabled={saving} accessibilityLabel={`Eliminar ${entry.title}`}><Text style={styles.iconDangerLabel}>⌫</Text></Pressable></View></View>)}
       <View style={styles.pagination}><Text style={styles.listMeta}>{filteredEntries.length} entrada(s){totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View>
     </> : <Text style={styles.emptyText}>{filter ? "No hay entradas que coincidan con el filtro." : "Todavía no hay entradas importadas."}</Text>}
+    <DeleteKnowledgeModal entry={entryToDelete} onClose={() => setEntryToDelete(null)} onConfirm={async () => { if (entryToDelete && await onDelete(entryToDelete.id)) setEntryToDelete(null); }} saving={saving} />
   </View>;
 }
 
@@ -845,6 +901,10 @@ function TutorialVideo() {
 
 function DeleteServiceModal({ service, onClose, onConfirm, saving }: { service: JobType | null; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean }) {
   return <Modal visible={Boolean(service)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar servicio</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{service?.name}</Text><Text style={styles.wizardText}>Se eliminará este servicio y su configuración de preguntas, catálogo y reglas. Las peticiones o presupuestos históricos conservarán sus referencias sin este servicio.</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
+}
+
+function DeleteKnowledgeModal({ entry, onClose, onConfirm, saving }: { entry: KnowledgeEntry | null; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean }) {
+  return <Modal visible={Boolean(entry)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar entrada</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{entry?.title}</Text><Text style={styles.wizardText}>{entry?.kind === "product" ? "Se archivará la entrada y también su partida de catálogo asociada." : "Se archivará esta entrada de la base de conocimiento."}</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer desde el backoffice.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
 function ServiceModal({ visible, services, onClose, onCreate, saving }: { visible: boolean; services: JobType[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
@@ -1574,6 +1634,14 @@ const styles = StyleSheet.create({
   knowledgeMeta: { width: 180 },
   knowledgeKind: { color: "#285246", fontSize: 12, fontWeight: "800" },
   knowledgeExcerpt: { color: "#61736a", fontSize: 12, lineHeight: 17, marginTop: 5 },
+  knowledgeEditingRow: { flexDirection: "row", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingVertical: 12, gap: 12 },
+  inlineInput: { borderWidth: 1, borderColor: "#258269", borderRadius: 7, paddingHorizontal: 9, paddingVertical: 7, color: "#17332d", backgroundColor: "#ffffff", marginBottom: 7 },
+  inlineContentInput: { minHeight: 58, textAlignVertical: "top" },
+  inlineActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  iconButton: { width: 32, height: 32, borderWidth: 1, borderColor: "#b7c8be", borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  iconLabel: { color: "#285246", fontSize: 18, fontWeight: "700" },
+  iconDangerButton: { width: 32, height: 32, borderWidth: 1, borderColor: "#e2b7b2", borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  iconDangerLabel: { color: "#a53d35", fontSize: 17, fontWeight: "700" },
   pagination: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14 },
   paginationActions: { flexDirection: "row", gap: 8 },
   paginationButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 7, paddingHorizontal: 10, paddingVertical: 7 },
