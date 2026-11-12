@@ -103,10 +103,10 @@ def _field_question(field: dict[str, Any]) -> str:
 def _opening_message(service: dict[str, Any]) -> str:
     service_name = service["name"].strip().lower()
     if service_name.startswith("reforma de "):
-        need = f"Necesitas reformar tu {service_name.removeprefix('reforma de ')}."
+        need = f"Quieres reformar tu {service_name.removeprefix('reforma de ')}."
     else:
-        need = f"Necesitas un presupuesto de {service_name}."
-    return f"{need} Necesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
+        need = f"Quieres pedir un presupuesto de {service_name}."
+    return f"{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto más adecuado a tus preferencias."
 
 
 def _friendly_retry(field: dict[str, Any]) -> str:
