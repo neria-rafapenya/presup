@@ -536,7 +536,7 @@ function DocumentationHelpChat({ onSend, onOpenDocumentation }: { onSend: (messa
     {open ? <View style={styles.helpCard}>
       <View style={styles.helpHeader}><View><Text style={styles.helpTitle}>Ayuda del backoffice</Text><Text style={styles.helpSubtitle}>Documentación Horekia</Text></View><Pressable onPress={() => setOpen(false)} accessibilityLabel="Cerrar ayuda"><Text style={styles.modalClose}>×</Text></Pressable></View>
       <ScrollView style={styles.helpMessages} contentContainerStyle={styles.helpMessagesContent}>
-        {messages.map((message, index) => <View key={`${message.role}-${index}`} style={[styles.helpMessage, message.role === "user" ? styles.helpMessageUser : styles.helpMessageAssistant]}><Text style={styles.helpMessageText}>{message.content}</Text></View>)}
+        {messages.map((message, index) => <View key={`${message.role}-${index}`} style={[styles.helpMessage, message.role === "user" ? styles.helpMessageUser : styles.helpMessageAssistant]}>{message.role === "assistant" ? <HelpMarkdown content={message.content} /> : <Text style={styles.helpMessageText}>{message.content}</Text>}</View>)}
         {sending ? <ActivityIndicator color="#258269" size="small" style={styles.helpLoader} /> : null}
       </ScrollView>
       <TextInput style={styles.helpInput} value={draft} onChangeText={setDraft} placeholder="Escribe tu duda…" editable={!sending} onSubmitEditing={() => void submit()} returnKeyType="send" />
@@ -544,6 +544,27 @@ function DocumentationHelpChat({ onSend, onOpenDocumentation }: { onSend: (messa
     </View> : null}
     <Pressable style={styles.helpFab} onPress={() => setOpen(!open)} accessibilityLabel={open ? "Cerrar ayuda del backoffice" : "Abrir ayuda del backoffice"}><Text style={styles.helpFabIcon}>{open ? "×" : "?"}</Text><Text style={styles.helpFabLabel}>Ayuda</Text></Pressable>
   </View>;
+}
+
+function HelpMarkdown({ content }: { content: string }) {
+  return <View>{content.split("\n").map((line, index) => {
+    if (!line.trim()) return <View key={`space-${index}`} style={styles.helpMarkdownSpacer} />;
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+[.)])\s+(.*)$/);
+    const heading = line.replace(/^\s*#{1,6}\s+/, "");
+    if (bullet) return <View key={`line-${index}`} style={styles.helpMarkdownLine}><Text style={styles.helpMarkdownBullet}>•</Text><Text style={styles.helpMessageText}><HelpMarkdownInline text={bullet[1]} /></Text></View>;
+    if (numbered) return <View key={`line-${index}`} style={styles.helpMarkdownLine}><Text style={styles.helpMarkdownNumber}>{numbered[1]}</Text><Text style={styles.helpMessageText}><HelpMarkdownInline text={numbered[2]} /></Text></View>;
+    return <Text key={`line-${index}`} style={[styles.helpMessageText, heading !== line && styles.helpMarkdownHeading]}><HelpMarkdownInline text={heading} /></Text>;
+  })}</View>;
+}
+
+function HelpMarkdownInline({ text }: { text: string }) {
+  return <>{text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <Text key={index} style={styles.helpMarkdownBold}>{part.slice(2, -2)}</Text>;
+    if (part.startsWith("`") && part.endsWith("`")) return <Text key={index} style={styles.helpMarkdownCode}>{part.slice(1, -1)}</Text>;
+    if (part.startsWith("*") && part.endsWith("*")) return <Text key={index} style={styles.helpMarkdownItalic}>{part.slice(1, -1)}</Text>;
+    return <Text key={index}>{part}</Text>;
+  })}</>;
 }
 
 function Dashboard({ summary }: { summary: Summary }) {
@@ -1697,6 +1718,14 @@ const styles = StyleSheet.create({
   helpMessageUser: { alignSelf: "flex-end", backgroundColor: "#dcefe4" },
   helpMessageAssistant: { alignSelf: "flex-start", backgroundColor: "#f0f5f1" },
   helpMessageText: { color: "#285246", fontSize: 13, lineHeight: 19 },
+  helpMarkdownLine: { flexDirection: "row", alignItems: "flex-start", marginBottom: 3 },
+  helpMarkdownBullet: { color: "#258269", fontSize: 14, fontWeight: "800", width: 16 },
+  helpMarkdownNumber: { color: "#258269", fontSize: 13, fontWeight: "800", width: 24 },
+  helpMarkdownHeading: { fontWeight: "800", marginBottom: 3 },
+  helpMarkdownBold: { fontWeight: "800" },
+  helpMarkdownItalic: { fontStyle: "italic" },
+  helpMarkdownCode: { fontFamily: "monospace", backgroundColor: "#dcefe4", color: "#17332d", fontSize: 12 },
+  helpMarkdownSpacer: { height: 5 },
   helpLoader: { alignSelf: "flex-start", margin: 6 },
   helpInput: { borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, color: "#17332d", backgroundColor: "#fbfcfb" },
   helpActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
