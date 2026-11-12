@@ -698,6 +698,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const [designerLoading, setDesignerLoading] = useState(false);
   const [designerSection, setDesignerSection] = useState<DesignerSection>("fields");
   const [designerSearch, setDesignerSearch] = useState("");
+  const originalBlueprintRef = useRef<ServiceBlueprint>(emptyBlueprint());
   const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const [highlightTarget, setHighlightTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const designerScrollRef = useRef<ScrollView>(null);
@@ -727,10 +728,12 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
     setDesignerSearch("");
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
-      setDraft({ ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] });
-      resetFieldEditorIds(blueprint.fields ?? []);
-      setRuleCards(toEditableRules(blueprint.rules ?? []));
-      setMeasuresText(JSON.stringify(blueprint.measures ?? [], null, 2));
+      const normalizedBlueprint = { ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] };
+      originalBlueprintRef.current = cloneBlueprint(normalizedBlueprint);
+      setDraft(normalizedBlueprint);
+      resetFieldEditorIds(normalizedBlueprint.fields);
+      setRuleCards(toEditableRules(normalizedBlueprint.rules));
+      setMeasuresText(JSON.stringify(normalizedBlueprint.measures, null, 2));
     }).catch(() => undefined).finally(() => {
       if (active) setDesignerLoading(false);
     });
@@ -790,6 +793,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
   const removeField = (index: number) => { markDesignerDirty(); fieldEditorIds.current = fieldEditorIds.current.filter((_, fieldIndex) => fieldIndex !== index); setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) }); };
   const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; markDesignerDirty(); const fields = [...draft.fields]; const editorIds = [...fieldEditorIds.current]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; [editorIds[index], editorIds[nextIndex]] = [editorIds[nextIndex], editorIds[index]]; fieldEditorIds.current = editorIds; setDraft({ ...draft, fields }); };
   const loadTemplate = (template: ServiceTemplate) => { markDesignerDirty(); const blueprint = blueprintFor(template); resetFieldEditorIds(blueprint.fields); setDraftFromTemplate(template, setDraft, setRuleCards, setMeasuresText); };
+  const resetToOriginal = () => { markDesignerDirty(); const blueprint = cloneBlueprint(originalBlueprintRef.current); resetFieldEditorIds(blueprint.fields); setDraft(blueprint); setRuleCards(toEditableRules(blueprint.rules)); setMeasuresText(JSON.stringify(blueprint.measures, null, 2)); setExpandedBlockKey(null); setDesignerSection("fields"); setDesignerSearch(""); };
   const addItem = (category = "producto") => { markDesignerDirty(); if (fullScreen) selectDesignerSection("items"); const index = draft.items.length; setExpandedBlockKey(`item-${index}`); setDraft({ ...draft, items: [...draft.items, { sku: `item_${index + 1}`, name: `Nuevo ${category}`, unit: "m²", currency: "EUR", metadata: { category } }] }); setScrollTarget({ section: "item", index }); highlightNewBlock("item", index); };
   const removeItem = (index: number) => { markDesignerDirty(); setDraft({ ...draft, items: draft.items.filter((_, itemIndex) => itemIndex !== index) }); };
   const updateRule = (index: number, patch: Partial<EditableRule>) => { markDesignerDirty(); setRuleCards(ruleCards.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule)); };
@@ -860,8 +864,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
           <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
             <View style={styles.templateChoices}>
-              <Pressable style={styles.smallButton} onPress={() => { markDesignerDirty(); resetFieldEditorIds([]); setDraft(emptyBlueprint()); setRuleCards([]); setMeasuresText("[]"); }}><Text style={styles.smallButtonLabel}>Empezar en blanco</Text></Pressable>
-              <TemplateSelector onSelect={loadTemplate} />
+              <TemplateSelector onSelect={loadTemplate} onReset={resetToOriginal} />
             </View>
             <View style={fullScreen && designerSection !== "fields" ? styles.hidden : null}><Text style={styles.sectionLabel}>Preguntas y variables</Text>
             <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
@@ -893,6 +896,10 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
 
 function emptyBlueprint(): ServiceBlueprint {
   return { fields: [], items: [], rules: [], measures: [] };
+}
+
+function cloneBlueprint(blueprint: ServiceBlueprint): ServiceBlueprint {
+  return JSON.parse(JSON.stringify(blueprint)) as ServiceBlueprint;
 }
 
 function readCatalogAttributes(item: BlueprintItem): CatalogAttribute[] {
@@ -961,9 +968,9 @@ const SERVICE_TEMPLATE_OPTIONS: Array<{ id: ServiceTemplate; label: string; desc
   { id: "maintenance", label: "Mantenimiento de instalaciones", description: "Activo, periodicidad, materiales y desplazamiento." }
 ];
 
-function TemplateSelector({ onSelect }: { onSelect: (template: ServiceTemplate) => void }) {
+function TemplateSelector({ onSelect, onReset }: { onSelect: (template: ServiceTemplate) => void; onReset: () => void }) {
   const [open, setOpen] = useState(false);
-  return <View style={styles.templateSelectorWrap}><Pressable style={styles.templateSelector} onPress={() => setOpen(!open)} accessibilityLabel="Seleccionar ayuda orientativa"><Text style={styles.templateSelectorLabel}>Cargar una ayuda orientativa</Text><Text style={styles.templateSelectorArrow}>{open ? "⌃" : "⌄"}</Text></Pressable>{open ? <View style={styles.templateMenu}>{SERVICE_TEMPLATE_OPTIONS.map((option) => <Pressable key={option.id} style={styles.templateOption} onPress={() => { onSelect(option.id); setOpen(false); }}><Text style={styles.templateOptionLabel}>{option.label}</Text><Text style={styles.templateOptionDescription}>{option.description}</Text></Pressable>)}</View> : null}</View>;
+  return <View style={[styles.templateSelectorWrap, open && styles.templateSelectorWrapOpen]}><Pressable style={styles.templateSelector} onPress={() => setOpen(!open)} accessibilityLabel="Seleccionar ayuda orientativa"><Text style={styles.templateSelectorLabel}>Cargar una ayuda orientativa</Text><Text style={styles.templateSelectorArrow}>{open ? "⌃" : "⌄"}</Text></Pressable>{open ? <View style={styles.templateMenu}><Pressable style={styles.templateResetOption} onPress={() => { onReset(); setOpen(false); }}><Text style={styles.templateOptionLabel}>Restablecer servicio</Text><Text style={styles.templateOptionDescription}>Recupera los patrones que tenía el servicio al abrirlo.</Text></Pressable>{SERVICE_TEMPLATE_OPTIONS.map((option) => <Pressable key={option.id} style={styles.templateOption} onPress={() => { onSelect(option.id); setOpen(false); }}><Text style={styles.templateOptionLabel}>{option.label}</Text><Text style={styles.templateOptionDescription}>{option.description}</Text></Pressable>)}</View> : null}</View>;
 }
 
 function setDraftFromTemplate(template: ServiceTemplate, setDraft: (blueprint: ServiceBlueprint) => void, setRuleCards: (rules: EditableRule[]) => void, setMeasuresText: (value: string) => void) {
@@ -1263,12 +1270,14 @@ const styles = StyleSheet.create({
   designerLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255, 255, 255, 0.9)", borderRadius: 16, alignItems: "center", justifyContent: "center", zIndex: 40 },
   designerLoadingText: { color: "#285246", fontSize: 14, fontWeight: "700", marginTop: 12 },
   designerRow: { flexDirection: "row", gap: 8, alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingTop: 7, marginTop: 5 },
-  templateChoices: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginBottom: 10 },
+  templateChoices: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginBottom: 10, position: "relative", zIndex: 1000 },
   templateSelectorWrap: { position: "relative", zIndex: 10, minWidth: 300 },
+  templateSelectorWrapOpen: { zIndex: 1000, elevation: 20 },
   templateSelector: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: "#f7fbf8", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   templateSelectorLabel: { color: "#285246", fontSize: 12, fontWeight: "700" },
   templateSelectorArrow: { color: "#285246", fontSize: 18, lineHeight: 14, marginLeft: 14 },
-  templateMenu: { position: "absolute", top: 42, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, zIndex: 30 },
+  templateMenu: { position: "absolute", top: 42, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, zIndex: 1000, elevation: 20 },
+  templateResetOption: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#cbd8d1", backgroundColor: "#f7fbf8" },
   templateOption: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#edf1ee" },
   templateOptionLabel: { color: "#17332d", fontSize: 12, fontWeight: "700" },
   templateOptionDescription: { color: "#718078", fontSize: 11, lineHeight: 15, marginTop: 2 },
