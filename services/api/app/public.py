@@ -84,12 +84,18 @@ def _tenant_and_service(conn: Any, tenant_slug: str, job_type_slug: str) -> tupl
 
 
 def _field_question(field: dict[str, Any]) -> str:
-    question = field["label"]
+    label = field["label"].lower()
     if field.get("type") == "choice" and field.get("options"):
-        question += f" ({', '.join(field['options'])})"
+        subject = label.removeprefix("tipo de ")
+        options = field["options"]
+        if len(options) == 2:
+            return f"¿Tu {subject} será **{options[0]}** o **{options[1]}**?"
+        choices = ", ".join(f"**{option}**" for option in options[:-1]) + f" o **{options[-1]}**"
+        return f"¿Qué {subject} prefieres? {choices}."
+    question = field["label"]
     if field.get("unit"):
         question += f" [{field['unit']}]"
-    if field.get("example"):
+    if field.get("example") and field.get("type") != "choice":
         question += f" Ejemplo: {field['example']}"
     return question + "."
 
@@ -220,7 +226,7 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
         first_field = _next_missing(blueprint["fields"], {})
         opening = _opening_message(service)
         if first_field:
-            opening += f" {_field_question(first_field)}"
+            opening += f"\n\n{_field_question(first_field)}"
         request = conn.execute(
             "insert into public.horekia_requests (tenant_id, customer_id, job_type_id, status, intake_data, missing_fields, source) values (%s, %s, %s, 'new', %s, %s, 'chat') returning id, status, intake_data, missing_fields, created_at",
             (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in blueprint["fields"] if field.get("required")])),
