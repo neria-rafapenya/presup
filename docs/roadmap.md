@@ -44,6 +44,19 @@ El nombre presup se mantiene para el repositorio y la estructura de código; Hor
 
 ## 4. Fases y criterios de cierre
 
+### Cola posterior a la POC
+
+Queda expresamente pospuesto hasta validar el circuito actual:
+
+- Autenticación y usuarios del tenant.
+- Adjuntos e imágenes desde el chat público.
+- Generación y envío de PDF de presupuesto o proforma.
+- Correo y seguimiento de envíos.
+- Despliegue en el VPS del cliente y dominios.
+- Interpretación libre con Gemini en el chat público.
+
+El asistente interno de documentación permanece separado del chatbot público y ya utiliza Gemini real.
+
 ### Fase 0 — Preparación y decisiones
 
 Objetivo: convertir el repositorio en un punto de partida seguro y reproducible.
