@@ -1,7 +1,12 @@
 """Public tenant chat API, deliberately separate from the backoffice help chat."""
 
+import base64
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
+import hashlib
 import json
+import re
+import secrets
 import ssl
 from typing import Any
 import unicodedata
@@ -12,7 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 import certifi
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
@@ -24,9 +29,30 @@ router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
 class ConversationStart(BaseModel):
     job_type_slug: str = Field(min_length=1, max_length=120)
-    customer_name: str | None = Field(default=None, max_length=160)
-    customer_email: str | None = Field(default=None, max_length=240)
+    customer_name: str = Field(min_length=2, max_length=160)
+    customer_email: str = Field(min_length=5, max_length=240)
     customer_phone: str | None = Field(default=None, max_length=80)
+
+    @field_validator("customer_name", "customer_email")
+    @classmethod
+    def normalize_contact(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Este dato es obligatorio")
+        return normalized
+
+    @field_validator("customer_email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized):
+            raise ValueError("Escribe un email válido")
+        return normalized
+
+
+class CustomerAccountComplete(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+    password_confirmation: str = Field(min_length=8, max_length=128)
 
 
 class ChatMessage(BaseModel):
@@ -341,6 +367,31 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _hash_customer_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    iterations = 310_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return "pbkdf2_sha256${}${}${}".format(
+        iterations,
+        base64.urlsafe_b64encode(salt).decode("ascii"),
+        base64.urlsafe_b64encode(digest).decode("ascii"),
+    )
+
+
+def _issue_customer_session(conn: Any, tenant_id: UUID, customer_id: UUID) -> str:
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn.execute(
+        """
+        insert into public.horekia_customer_sessions
+          (tenant_id, customer_id, token_hash, expires_at)
+        values (%s, %s, %s, %s)
+        """,
+        (tenant_id, customer_id, token_hash, datetime.now(timezone.utc) + timedelta(days=30)),
+    )
+    return token
+
+
 def _quote_response(quote: dict[str, Any], calculation: dict[str, Any]) -> dict[str, Any]:
     return {"id": str(quote["id"]), "status": quote["status"], "currency": quote["currency"], "subtotal": str(quote["subtotal"]), "tax_amount": str(quote["tax_amount"]), "total": str(quote["total"]), "lines": calculation["lines"]}
 
@@ -389,13 +440,11 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
 def start_conversation(tenant_slug: str, payload: ConversationStart, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
     with db_session(settings) as conn:
         tenant, service = _tenant_and_service(conn, tenant_slug, payload.job_type_slug)
-        customer_id = None
-        if payload.customer_name or payload.customer_email or payload.customer_phone:
-            customer = conn.execute(
-                "insert into public.horekia_customers (tenant_id, name, email, phone) values (%s, %s, %s, %s) returning id",
-                (tenant["id"], payload.customer_name, payload.customer_email, payload.customer_phone),
-            ).fetchone()
-            customer_id = customer["id"]
+        customer = conn.execute(
+            "insert into public.horekia_customers (tenant_id, name, email, phone) values (%s, %s, %s, %s) returning id",
+            (tenant["id"], payload.customer_name, payload.customer_email, payload.customer_phone),
+        ).fetchone()
+        customer_id = customer["id"]
         blueprint = _blueprint(conn, tenant["id"], service["id"])
         fields = _chat_fields(blueprint)
         first_field = _next_missing(fields, {})
@@ -408,6 +457,48 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
         ).fetchone()
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant["id"], request["id"], opening, Jsonb({"service": service["slug"]}), Jsonb({"source": "service_blueprint"})))
         return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field), "intake_data": {}, "status": request["status"]}
+
+
+@router.post("/conversations/{request_id}/account")
+def complete_customer_account(request_id: UUID, payload: CustomerAccountComplete, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    """Finish the customer account after the deterministic quote is prepared."""
+
+    if payload.password != payload.password_confirmation:
+        raise HTTPException(status_code=422, detail="Las contraseñas no coinciden")
+    with db_session(settings) as conn:
+        request = conn.execute(
+            "select id, customer_id, status from public.horekia_requests where tenant_id = %s and id = %s",
+            (POC_TENANT_ID, request_id),
+        ).fetchone()
+        if not request:
+            raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+        if request["status"] != "quoted":
+            raise HTTPException(status_code=409, detail="La solicitud todavía no tiene un presupuesto preparado")
+        customer = conn.execute(
+            "select id, name, email, account_password_hash from public.horekia_customers where tenant_id = %s and id = %s",
+            (POC_TENANT_ID, request["customer_id"]),
+        ).fetchone()
+        if not customer:
+            raise HTTPException(status_code=409, detail="La solicitud no tiene datos de contacto")
+        if customer["account_password_hash"]:
+            raise HTTPException(status_code=409, detail="Esta cuenta ya está activada. Inicia sesión para continuar")
+        conn.execute(
+            "update public.horekia_customers set account_password_hash = %s, account_created_at = now(), last_login_at = now() where tenant_id = %s and id = %s",
+            (_hash_customer_password(payload.password), POC_TENANT_ID, customer["id"]),
+        )
+        token = _issue_customer_session(conn, POC_TENANT_ID, customer["id"])
+        quote = conn.execute(
+            "select id, status, currency, subtotal, tax_amount, total, calculation_snapshot from public.horekia_quotes where tenant_id = %s and request_id = %s order by created_at desc limit 1",
+            (POC_TENANT_ID, request_id),
+        ).fetchone()
+        if not quote:
+            raise HTTPException(status_code=409, detail="No se ha encontrado el presupuesto preparado")
+        return {
+            "status": "authenticated",
+            "session_token": token,
+            "customer": {"id": str(customer["id"]), "name": customer["name"], "email": customer["email"]},
+            "quote": _quote_response(quote, quote["calculation_snapshot"] or {"lines": []}),
+        }
 
 
 @router.get("/conversations/{request_id}")
@@ -508,7 +599,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'needs_review', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "calculator", "error": str(exc)})))
             return {"request_id": str(request_id), "status": "needs_review", "reply": reply, "field": None, "intake_data": intake}
-        reply = f"He preparado una solicitud de presupuesto de {service['name']}. Total orientativo: {calculation['total']} {calculation['currency']}. Queda pendiente de revisión."
+        reply = f"He preparado tu solicitud de presupuesto de {service['name']}. Para consultar el importe y acceder al presupuesto, solo falta crear una contraseña para tu cuenta."
         conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"quote_id": str(quote["id"]), "calculation": calculation}), Jsonb({"source": "calculator"})))
-        return {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake, "quote": _quote_response(quote, calculation)}
+        return {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake, "quote_available": True, "quote_id": str(quote["id"])}
