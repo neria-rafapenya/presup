@@ -800,6 +800,7 @@ function Documentation() {
     "Ejemplo de documentación y políticas",
     "Cómo redactar entradas útiles",
     "Proceso recomendado de carga y validación",
+    "Cobertura geográfica",
   ];
   return <View>
     <View style={styles.panel}>
@@ -884,6 +885,13 @@ function Documentation() {
       <DocumentationBullet title="5. Configurar el servicio" text="Crear las preguntas, productos y reglas del servicio en Diseñador de servicios." />
       <DocumentationBullet title="6. Probar" text="Enviar peticiones de ejemplo al chat y confirmar que Gemini pregunta lo necesario y que el importe lo calcula el motor determinista." />
       <Text style={styles.documentationCallout}>La importación actual es por CSV. La carga directa de PDF o DOC todavía no está habilitada en la POC.</Text>
+    </DocumentationSection>
+
+    <DocumentationSection number="9" title="Cobertura geográfica">
+      <Text style={styles.documentationText}>La cobertura se configura en Empresa y es común para el tenant. La Ciudad de referencia es el punto de partida y Radio de acción (km) define la distancia máxima que la empresa quiere atender.</Text>
+      <DocumentationBullet title="Configuración" text="Abre Empresa → Datos de empresa, revisa la Ciudad de referencia, escribe el Radio de acción (km) y pulsa Guardar datos de empresa. Las instalaciones existentes parten de 100 km." />
+      <DocumentationBullet title="Comprobación" text="El chat pregunta primero dónde debe prestarse el servicio y compara esa ubicación con la ciudad de referencia mediante un cálculo determinista. Si está fuera del radio, la solicitud se cierra y se informa al cliente." />
+      <Text style={styles.documentationCallout}>Gemini solo puede ayudar a normalizar una ciudad o código postal que no se reconozca localmente. No calcula coordenadas, distancias ni decide la viabilidad.</Text>
     </DocumentationSection>
 
     <DocumentationDocumentSection title="Servicios">
