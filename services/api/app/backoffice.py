@@ -59,6 +59,17 @@ class JobTypeCreate(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     name: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=2000)
+    sector_pack_id: UUID | None = None
+
+
+class JobTypePatch(BaseModel):
+    sector_pack_id: UUID | None = None
+
+
+class SectorPackCreate(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    name: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
 
 
 class BlueprintField(BaseModel):
@@ -413,8 +424,13 @@ def list_job_types(settings: Settings = Depends(get_settings)) -> list[dict[str,
         with db_session(settings) as conn:
             return conn.execute(
                 """
-                select id, slug, name, description, status, created_at, updated_at
-                from public.horekia_job_types where tenant_id = %s order by name
+                select j.id, j.slug, j.name, j.description, j.status, j.created_at, j.updated_at,
+                       st.id as sector_pack_id, st.slug as sector_pack_slug,
+                       st.name as sector_pack_name, st.description as sector_pack_description
+                from public.horekia_job_types j
+                left join public.horekia_service_types st on st.tenant_id = j.tenant_id and st.id = j.service_type_id
+                where j.tenant_id = %s
+                order by coalesce(st.name, 'Sin clasificar'), j.name
                 """,
                 (POC_TENANT_ID,),
             ).fetchall()
@@ -428,16 +444,88 @@ def create_job_type(payload: JobTypeCreate, settings: Settings = Depends(get_set
         with db_session(settings) as conn:
             row = conn.execute(
                 """
-                insert into public.horekia_job_types (tenant_id, slug, name, description)
-                values (%s, %s, %s, %s)
-                returning id, slug, name, description, status, created_at, updated_at
+                insert into public.horekia_job_types (tenant_id, slug, name, description, service_type_id)
+                values (%s, %s, %s, %s, %s)
+                returning id
                 """,
-                (POC_TENANT_ID, payload.slug, payload.name, payload.description),
+                (POC_TENANT_ID, payload.slug, payload.name, payload.description, payload.sector_pack_id),
             ).fetchone()
-            return row
+            return conn.execute(
+                """
+                select j.id, j.slug, j.name, j.description, j.status, j.created_at, j.updated_at,
+                       st.id as sector_pack_id, st.slug as sector_pack_slug,
+                       st.name as sector_pack_name, st.description as sector_pack_description
+                from public.horekia_job_types j
+                left join public.horekia_service_types st on st.tenant_id = j.tenant_id and st.id = j.service_type_id
+                where j.tenant_id = %s and j.id = %s
+                """,
+                (POC_TENANT_ID, row["id"]),
+            ).fetchone()
     except Exception as exc:
         if "duplicate key" in str(exc).lower():
             raise HTTPException(status_code=409, detail="Ya existe un servicio con ese slug") from exc
+        raise database_error(exc) from exc
+
+
+@router.patch("/job-types/{job_type_id}")
+def update_job_type(job_type_id: UUID, payload: JobTypePatch, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                update public.horekia_job_types
+                set service_type_id = %s, updated_at = now()
+                where tenant_id = %s and id = %s
+                returning id
+                """,
+                (payload.sector_pack_id, POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Servicio no encontrado")
+            return conn.execute(
+                """
+                select j.id, j.slug, j.name, j.description, j.status, j.created_at, j.updated_at,
+                       st.id as sector_pack_id, st.slug as sector_pack_slug,
+                       st.name as sector_pack_name, st.description as sector_pack_description
+                from public.horekia_job_types j
+                left join public.horekia_service_types st on st.tenant_id = j.tenant_id and st.id = j.service_type_id
+                where j.tenant_id = %s and j.id = %s
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.get("/service-types")
+def list_sector_packs(settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            return conn.execute(
+                "select id, slug, name, description from public.horekia_service_types where tenant_id = %s order by name",
+                (POC_TENANT_ID,),
+            ).fetchall()
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.post("/service-types", status_code=status.HTTP_201_CREATED)
+def create_sector_pack(payload: SectorPackCreate, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            return conn.execute(
+                """
+                insert into public.horekia_service_types (tenant_id, slug, name, description)
+                values (%s, %s, %s, %s)
+                returning id, slug, name, description
+                """,
+                (POC_TENANT_ID, payload.slug, payload.name, payload.description),
+            ).fetchone()
+    except Exception as exc:
+        if "duplicate key" in str(exc).lower():
+            raise HTTPException(status_code=409, detail="Ya existe un tipo de servicio con ese slug") from exc
         raise database_error(exc) from exc
 
 

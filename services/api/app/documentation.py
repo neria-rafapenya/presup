@@ -31,9 +31,12 @@ CSV de patrón de servicio:
 - Se importa desde Base de conocimiento con el bloque Importar patrón de servicio.
 - Columnas: service_slug, record_type, order, code, title, content, type, options, required,
   unit, min, max, example, base_price, currency, priority, rule_kind, definition,
-  expression y metadata.
+  expression, metadata y depends_on.
 - record_type puede ser service, field, item, rule o measure.
 - service crea el servicio si no existe y title contiene su nombre.
+- La fila service puede incluir metadata como {"sector_pack":"imprenta"} para asignar el
+  servicio a un tipo de servicio existente. Los tipos de servicio son categorías superiores
+  tenant-scoped y se pueden crear desde el Diseñador.
 - field añade una pregunta, item añade un concepto al servicio, rule añade una regla y
   measure añade una medida calculada.
 - Las filas se fusionan por code y no borran elementos existentes.

@@ -12,10 +12,17 @@ values
   ('00000000-0000-0000-0000-000000000002')
 on conflict (tenant_id) do nothing;
 
-insert into public.horekia_job_types (tenant_id, slug, name, description)
+insert into public.horekia_service_types (tenant_id, slug, name, description)
 values
-  ('00000000-0000-0000-0000-000000000001', 'bolsas', 'Bolsas personalizadas', 'Servicio ficticio para pruebas'),
-  ('00000000-0000-0000-0000-000000000002', 'reformas', 'Reformas', 'Servicio ficticio para pruebas')
+  ('00000000-0000-0000-0000-000000000001', 'imprenta', 'Imprenta', 'Servicios de impresión, rotulación y productos gráficos.'),
+  ('00000000-0000-0000-0000-000000000001', 'taller-de-coches', 'Taller de coches', 'Servicios de mecánica, mantenimiento y reparación de vehículos.'),
+  ('00000000-0000-0000-0000-000000000001', 'empresa-de-reformas', 'Empresa de reformas', 'Servicios de reformas, obras y mantenimiento de espacios.')
+on conflict (tenant_id, slug) do nothing;
+
+insert into public.horekia_job_types (tenant_id, slug, name, description, service_type_id)
+values
+  ('00000000-0000-0000-0000-000000000001', 'bolsas', 'Bolsas personalizadas', 'Servicio ficticio para pruebas', (select id from public.horekia_service_types where tenant_id = '00000000-0000-0000-0000-000000000001' and slug = 'imprenta')),
+  ('00000000-0000-0000-0000-000000000002', 'reformas', 'Reformas', 'Servicio ficticio para pruebas', null)
 on conflict (tenant_id, slug) do nothing;
 
 insert into public.horekia_items (tenant_id, name, unit, base_price)

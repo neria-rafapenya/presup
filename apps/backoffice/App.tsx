@@ -28,8 +28,10 @@ type Summary = {
   counts: { job_types: number; items: number; requests: number; quotes: number };
 };
 
-type JobType = { id: string; slug: string; name: string; description?: string | null; status: string };
-type NewService = { slug: string; name: string; description: string };
+type SectorPack = { id: string; slug: string; name: string; description?: string | null };
+type NewSectorPack = { slug: string; name: string; description: string };
+type JobType = { id: string; slug: string; name: string; description?: string | null; status: string; sector_pack_id?: string | null; sector_pack_slug?: string | null; sector_pack_name?: string | null; sector_pack_description?: string | null };
+type NewService = { slug: string; name: string; description: string; sector_pack_id?: string };
 type BulkServiceDraft = NewService & { id: number };
 type BulkCreateResult = { created: number; errors: string[] };
 type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
@@ -67,11 +69,11 @@ type BlueprintItem = { sku: string; name: string; description?: string; unit: st
 type CatalogAttribute = { label: string; value: string };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
-type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }>; replace?: boolean };
+type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; sectorPackSlug?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }>; replace?: boolean };
 type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "cleaning" | "gardening" | "photography" | "transport" | "it_support" | "consulting" | "training" | "maintenance";
 
 let bulkDraftSequence = 0;
-const newBulkServiceDraft = (): BulkServiceDraft => ({ id: ++bulkDraftSequence, slug: "", name: "", description: "" });
+const newBulkServiceDraft = (): BulkServiceDraft => ({ id: ++bulkDraftSequence, slug: "", name: "", description: "", sector_pack_id: "" });
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
@@ -169,6 +171,7 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
+  const [sectorPacks, setSectorPacks] = useState<SectorPack[]>([]);
   const [designerService, setDesignerService] = useState<JobType | null>(null);
   const [designerReturnScreen, setDesignerReturnScreen] = useState<Screen>("wizard");
   const [wizardResumeStep, setWizardResumeStep] = useState(0);
@@ -205,9 +208,10 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextServices, nextKnowledgeSummary, nextKnowledgeEntries, nextRequests, nextQuotes] = await Promise.all([
+      const [nextSummary, nextServices, nextSectorPacks, nextKnowledgeSummary, nextKnowledgeEntries, nextRequests, nextQuotes] = await Promise.all([
         api<Summary>("/api/v1/backoffice/summary"),
         api<JobType[]>("/api/v1/backoffice/job-types"),
+        api<SectorPack[]>("/api/v1/backoffice/service-types"),
         api<KnowledgeSummary>("/api/v1/backoffice/knowledge/summary"),
         api<KnowledgeEntry[]>("/api/v1/backoffice/knowledge/entries"),
         api<RequestSummary[]>("/api/v1/backoffice/requests"),
@@ -217,6 +221,7 @@ export default function App() {
       setSummary(nextSummary);
       setProfile(nextProfile);
       setServices(nextServices);
+      setSectorPacks(nextSectorPacks);
       setKnowledgeSummary(nextKnowledgeSummary);
       setKnowledgeEntries(nextKnowledgeEntries);
       setRequests(nextRequests);
@@ -325,6 +330,22 @@ export default function App() {
       return true;
     } catch {
       setError("No se ha podido crear el servicio. Revisa que el slug no esté repetido.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createSectorPack = async (newPack: NewSectorPack) => {
+    if (!newPack.slug || !newPack.name) return false;
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await api<SectorPack>("/api/v1/backoffice/service-types", { method: "POST", body: JSON.stringify(newPack) });
+      setSectorPacks((current) => [...current, created].sort((left, right) => left.name.localeCompare(right.name)));
+      return true;
+    } catch {
+      setError("No se ha podido crear el tipo de servicio. Revisa que el slug no esté repetido.");
       return false;
     } finally {
       setSaving(false);
@@ -479,8 +500,13 @@ export default function App() {
         if (!payload.serviceName?.trim()) throw new Error("SERVICE_NAME_REQUIRED");
         service = await api<JobType>("/api/v1/backoffice/job-types", {
           method: "POST",
-          body: JSON.stringify({ slug: payload.serviceSlug, name: payload.serviceName.trim(), description: payload.serviceDescription?.trim() || null }),
+          body: JSON.stringify({ slug: payload.serviceSlug, name: payload.serviceName.trim(), description: payload.serviceDescription?.trim() || null, sector_pack_id: sectorPacks.find((pack) => pack.slug === payload.sectorPackSlug)?.id }),
         });
+      } else if (payload.sectorPackSlug) {
+        const sectorPackId = sectorPacks.find((pack) => pack.slug === payload.sectorPackSlug)?.id;
+        if (sectorPackId && service.sector_pack_id !== sectorPackId) {
+          service = await api<JobType>(`/api/v1/backoffice/job-types/${service.id}`, { method: "PATCH", body: JSON.stringify({ sector_pack_id: sectorPackId }) });
+        }
       }
       const current = await api<ServiceBlueprint>(`/api/v1/backoffice/job-types/${service.id}/blueprint`);
       const fields = payload.replace ? payload.fields : [...new Map((current.fields ?? []).map((field) => [field.key, field])).values(), ...payload.fields.filter((field) => !(current.fields ?? []).some((currentField) => currentField.key === field.key))];
@@ -586,7 +612,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} sectorPacks={sectorPacks} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onCreateSectorPack={createSectorPack} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -606,7 +632,7 @@ export default function App() {
           ) : summary && profile ? (
             <>
               {screen === "wizard" ? (
-                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} onUpdateKnowledgeEntry={updateKnowledgeEntry} onDeleteKnowledgeEntry={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
+                <Wizard summary={summary} profile={profile} setProfile={setProfile} services={services} sectorPacks={sectorPacks} knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} initialStep={wizardResumeStep} onComplete={() => navigate("dashboard")} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onCreateService={createService} onDeleteService={deleteService} onDesignService={(service) => openDesigner(service, "wizard")} onImportKnowledge={importKnowledge} onUpdateKnowledgeEntry={updateKnowledgeEntry} onDeleteKnowledgeEntry={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
@@ -616,7 +642,7 @@ export default function App() {
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
               {screen === "documentation" ? <Documentation /> : null}
-              {screen === "bulk-services" ? <BulkServicesPage services={services} onCreateMany={createServicesBulk} onBack={() => navigate("designer")} saving={saving} /> : null}
+              {screen === "bulk-services" ? <BulkServicesPage services={services} sectorPacks={sectorPacks} onCreateMany={createServicesBulk} onBack={() => navigate("designer")} saving={saving} /> : null}
               {screen === "requests" ? <RequestsPage requests={requests} onCalculate={calculateRequestQuote} onStatus={updateRequestStatus} saving={saving} /> : null}
               {screen === "quotes" ? <QuotesPage quotes={quotes} onStatus={updateQuoteStatus} saving={saving} /> : null}
             </>
@@ -718,7 +744,7 @@ function Dashboard({ summary }: { summary: Summary }) {
   );
 }
 
-function Wizard({ summary, profile, setProfile, services, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, onUpdateKnowledgeEntry, onDeleteKnowledgeEntry, onImportService, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdateKnowledgeEntry: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDeleteKnowledgeEntry: (entryId: string) => Promise<boolean>; onImportService: (payload: ServiceImportData) => Promise<boolean>; saving: boolean }) {
+function Wizard({ summary, profile, setProfile, services, sectorPacks, knowledgeSummary, knowledgeEntries, initialStep = 0, onComplete, onSaveProfile, onUploadTemplate, onCreateService, onDeleteService, onDesignService, onImportKnowledge, onUpdateKnowledgeEntry, onDeleteKnowledgeEntry, onImportService, saving }: { summary: Summary; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; services: JobType[]; sectorPacks: SectorPack[]; knowledgeSummary: KnowledgeSummary; knowledgeEntries: KnowledgeEntry[]; initialStep?: number; onComplete: () => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onCreateService: (service: NewService) => Promise<boolean>; onDeleteService: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; onImportKnowledge: (sourceName: string, rows: KnowledgeRow[]) => Promise<boolean>; onUpdateKnowledgeEntry: (entryId: string, patch: { title: string; content: string }) => Promise<boolean>; onDeleteKnowledgeEntry: (entryId: string) => Promise<boolean>; onImportService: (payload: ServiceImportData) => Promise<boolean>; saving: boolean }) {
   const [step, setStep] = useState(initialStep);
   const steps = ["Empresa", "Oferta", "Conocimiento", "Revisión"];
   const finish = () => {
@@ -741,7 +767,7 @@ function Wizard({ summary, profile, setProfile, services, knowledgeSummary, know
           <Company summary={summary} profile={profile} setProfile={setProfile} onSaveProfile={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} embedded />
         ) : null}
         {step === 1 ? (
-          <Services services={services} onCreate={onCreateService} onDelete={onDeleteService} onDesignService={onDesignService} saving={saving} embedded />
+          <Services services={services} sectorPacks={sectorPacks} onCreate={onCreateService} onDelete={onDeleteService} onDesignService={onDesignService} saving={saving} embedded />
         ) : null}
         {step === 2 ? (
           <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={onImportKnowledge} onUpdate={onUpdateKnowledgeEntry} onDelete={onDeleteKnowledgeEntry} onImportService={onImportService} saving={saving} embedded />
@@ -823,7 +849,7 @@ function Documentation() {
       <Text style={styles.documentationText}>Para productos se recomienda completar code, category, unit, base_price y currency. El precio debe ser numérico, sin el símbolo de moneda.</Text>
       <Text style={styles.documentationText}>Para crear o ampliar un servicio usa el bloque Importar patrón de servicio. Ese CSV utiliza service_slug y record_type con valores service, field, item, rule o measure. Las filas se fusionan por code con el patrón existente.</Text>
       <Text style={styles.codeBlock}>service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata,depends_on</Text>
-      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, catálogo, reglas, medidas, opciones, límites, ejemplos, metadatos y dependencias entre preguntas. En depends_on puedes indicar qué pregunta anterior controla las opciones disponibles. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
+      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, catálogo, reglas, medidas, opciones, límites, ejemplos, metadatos y dependencias entre preguntas. En la fila service puedes usar metadata como {`{"sector_pack":"imprenta"}`} para clasificarlo. En depends_on puedes indicar qué pregunta anterior controla las opciones disponibles. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
     </DocumentationSection>
 
     <DocumentationSection number="5" title="Ejemplo de producto">
@@ -1161,6 +1187,7 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
   const measures: Array<{ code: string; expression: Record<string, unknown> }> = [];
   let serviceName: string | undefined;
   let serviceDescription: string | undefined;
+  let sectorPackSlug: string | undefined;
 
   const orderedRecords = [...records].sort((left, right) => {
     const leftType = (left.record_type || left.tipo || "").toLowerCase();
@@ -1175,6 +1202,13 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
       serviceName = record.title || record.name;
       serviceDescription = record.content || record.description;
       if (!serviceName) return { error: "La fila service necesita el nombre del servicio en title." };
+      if (record.metadata) {
+        try {
+          const metadata = JSON.parse(record.metadata) as { sector_pack?: unknown; sector_pack_slug?: unknown };
+          const candidate = metadata.sector_pack_slug ?? metadata.sector_pack;
+          if (typeof candidate === "string") sectorPackSlug = candidate;
+        } catch { return { error: "El metadata de la fila service no contiene JSON válido." }; }
+      }
       continue;
     }
     if (!record.code) return { error: `La fila ${recordType} necesita un código interno en code.` };
@@ -1215,7 +1249,7 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
       measures.push({ code: record.code, expression });
     }
   }
-  return { data: { serviceSlug, serviceName, serviceDescription, fields, items, rules, measures } };
+  return { data: { serviceSlug, serviceName, serviceDescription, sectorPackSlug, fields, items, rules, measures } };
 }
 
 function splitCsvLine(line: string, delimiter: string): string[] {
@@ -1265,7 +1299,7 @@ function Company({ summary, setSummary, profile, setProfile, onSaveProfile, onUp
   );
 }
 
-function Services({ services, onCreate, onDelete, onDesignService, saving, embedded = false }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; saving: boolean; embedded?: boolean }) {
+function Services({ services, sectorPacks, onCreate, onDelete, onDesignService, saving, embedded = false }: { services: JobType[]; sectorPacks: SectorPack[]; onCreate: (service: NewService) => Promise<boolean>; onDelete: (jobTypeId: string) => Promise<boolean>; onDesignService: (service: JobType) => void; saving: boolean; embedded?: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
   return (
@@ -1280,7 +1314,7 @@ function Services({ services, onCreate, onDelete, onDesignService, saving, embed
         <Text style={styles.panelTitle}>Servicios configurados</Text>
         <ServiceTable services={services} onDesign={onDesignService} onDelete={(service) => setServiceToDelete(service)} saving={saving} emptyText="Todavía no hay servicios configurados." />
       </View>
-      <ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
+      <ServiceModal visible={modalVisible} services={services} sectorPacks={sectorPacks} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} />
       <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} />
     </View>
   );
@@ -1313,19 +1347,20 @@ function ServiceTable({ services, onDesign, onDelete, saving, emptyText, page, o
     <TextInput style={styles.filterInput} value={filter} onChangeText={setFilter} placeholder="Filtrar por nombre, slug o estado…" />
     {filteredServices.length ? <>
       <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Servicio</Text><Text style={styles.tableHeaderLabel}>Acciones</Text></View>
-      {visibleServices.map((service) => <View style={styles.tableRow} key={service.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesign(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => onDelete(service)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
+      {visibleServices.map((service, index) => <View key={service.id}>{index === 0 || visibleServices[index - 1].sector_pack_id !== service.sector_pack_id ? <Text style={styles.serviceCategoryTitle}>{service.sector_pack_name ?? "Sin clasificar"}</Text> : null}<View style={styles.tableRow}><View style={styles.tableMain}><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesign(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => onDelete(service)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View></View>)}
       <View style={styles.pagination}><Text style={styles.listMeta}>{filteredServices.length} servicio(s){totalPages > 1 ? ` · página ${currentPage} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => changePage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => changePage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View>
     </> : <Text style={styles.emptyText}>{filter ? "No hay servicios que coincidan con el filtro." : emptyText}</Text>}
   </View>;
 }
 
-function DesignerServicePicker({ services, page, onPageChange, onCreate, onOpenBulk, onDesign, onDelete, saving }: { services: JobType[]; page: number; onPageChange: (page: number) => void; onCreate: (service: NewService) => Promise<boolean>; onOpenBulk: () => void; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
+function DesignerServicePicker({ services, sectorPacks, page, onPageChange, onCreate, onCreateSectorPack, onOpenBulk, onDesign, onDelete, saving }: { services: JobType[]; sectorPacks: SectorPack[]; page: number; onPageChange: (page: number) => void; onCreate: (service: NewService) => Promise<boolean>; onCreateSectorPack: (pack: NewSectorPack) => Promise<boolean>; onOpenBulk: () => void; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
+  const [sectorPackModalVisible, setSectorPackModalVisible] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
-  return <ScrollView style={styles.designerPickerScroll} contentContainerStyle={styles.designerPicker} showsVerticalScrollIndicator><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><View style={styles.designerHeaderActions}><Pressable style={styles.secondaryButton} onPress={onOpenBulk} disabled={saving}><Text style={styles.secondaryLabel}>Creador masivo de servicios</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} page={page} onPageChange={onPageChange} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></ScrollView>;
+  return <ScrollView style={styles.designerPickerScroll} contentContainerStyle={styles.designerPicker} showsVerticalScrollIndicator><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><View style={styles.designerHeaderActions}><Pressable style={styles.secondaryButton} onPress={() => setSectorPackModalVisible(true)} disabled={saving}><Text style={styles.secondaryLabel}>Nuevo tipo de servicio</Text></Pressable><Pressable style={styles.secondaryButton} onPress={onOpenBulk} disabled={saving}><Text style={styles.secondaryLabel}>Creador masivo de servicios</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Servicios por tipo</Text><ServiceTable services={services} page={page} onPageChange={onPageChange} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} sectorPacks={sectorPacks} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><SectorPackModal visible={sectorPackModalVisible} onClose={() => setSectorPackModalVisible(false)} onCreate={onCreateSectorPack} saving={saving} /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></ScrollView>;
 }
 
-function BulkServicesPage({ services, onCreateMany, onBack, saving }: { services: JobType[]; onCreateMany: (services: NewService[]) => Promise<BulkCreateResult>; onBack: () => void; saving: boolean }) {
+function BulkServicesPage({ services, sectorPacks, onCreateMany, onBack, saving }: { services: JobType[]; sectorPacks: SectorPack[]; onCreateMany: (services: NewService[]) => Promise<BulkCreateResult>; onBack: () => void; saving: boolean }) {
   const [drafts, setDrafts] = useState<BulkServiceDraft[]>(() => [newBulkServiceDraft()]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -1341,6 +1376,7 @@ function BulkServicesPage({ services, onCreateMany, onBack, saving }: { services
 
   const validate = () => {
     if (drafts.some((draft) => !draft.name.trim())) return "Completa el nombre de cada servicio antes de continuar.";
+    if (drafts.some((draft) => !draft.sector_pack_id)) return "Selecciona un tipo de servicio para cada bloque.";
     const slugs = drafts.map((draft) => draft.slug);
     if (slugs.some((slug) => !slug)) return "No se ha podido generar el slug de uno de los servicios.";
     const duplicateSlug = slugs.find((slug, index) => slugs.indexOf(slug) !== index);
@@ -1376,6 +1412,7 @@ function BulkServicesPage({ services, onCreateMany, onBack, saving }: { services
         <Field label="Nombre" hint="Nombre visible del servicio, por ejemplo: Tarjetas de visita." value={draft.name} onChangeText={(name) => updateName(draft, name)} />
         <Field label="Slug automático" hint="Identificador interno generado a partir del nombre." value={draft.slug} editable={false} onChangeText={() => undefined} />
       </View>
+      <SectorPackSelector sectorPacks={sectorPacks} value={draft.sector_pack_id ?? ""} onChange={(sector_pack_id) => updateDraft(draft.id, { sector_pack_id })} />
       <Field label="Descripción" value={draft.description} onChangeText={(description) => updateDraft(draft.id, { description })} />
     </View>)}
     <View style={styles.bulkActions}><Pressable style={styles.secondaryButton} onPress={() => { setDrafts((current) => [...current, newBulkServiceDraft()]); setValidationError(null); setResultMessage(null); }} disabled={saving}><Text style={styles.secondaryLabel}>+ Añadir otro servicio</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Creando servicios…" : `Crear ${drafts.length} servicio(s)`}</Text></Pressable></View>
@@ -1396,8 +1433,8 @@ function DeleteKnowledgeModal({ entry, onClose, onConfirm, saving }: { entry: Kn
   return <Modal visible={Boolean(entry)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar entrada</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{entry?.title}</Text><Text style={styles.wizardText}>{entry?.kind === "product" ? "Se archivará la entrada y también su partida de catálogo asociada." : "Se archivará esta entrada de la base de conocimiento."}</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer desde el backoffice.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
-function ServiceModal({ visible, services, onClose, onCreate, saving, subtitle = "Añádelo sin salir del contexto del Wizard o del catálogo." }: { visible: boolean; services: JobType[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean; subtitle?: string }) {
-  const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "" });
+function ServiceModal({ visible, services, sectorPacks, onClose, onCreate, saving, subtitle = "Añádelo sin salir del contexto del Wizard o del catálogo." }: { visible: boolean; services: JobType[]; sectorPacks: SectorPack[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean; subtitle?: string }) {
+  const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "", sector_pack_id: "" });
   const [validationError, setValidationError] = useState<string | null>(null);
   const slugExists = Boolean(draft.slug) && services.some((service) => service.slug === draft.slug);
   const submit = async () => {
@@ -1409,8 +1446,12 @@ function ServiceModal({ visible, services, onClose, onCreate, saving, subtitle =
       setValidationError("Ya existe otro servicio con este nombre. Cambia el nombre para generar un slug distinto.");
       return;
     }
+    if (!draft.sector_pack_id) {
+      setValidationError("Selecciona el tipo de servicio al que pertenecerá.");
+      return;
+    }
     if (await onCreate(draft)) {
-      setDraft({ slug: "", name: "", description: "" });
+      setDraft({ slug: "", name: "", description: "", sector_pack_id: "" });
       setValidationError(null);
       onClose();
     }
@@ -1425,13 +1466,33 @@ function ServiceModal({ visible, services, onClose, onCreate, saving, subtitle =
             <Field label="Nombre" hint="Es el nombre visible del producto o servicio que quieres presupuestar." value={draft.name} onChangeText={(name) => { const slug = slugify(name); setDraft({ ...draft, name, slug }); setValidationError(services.some((service) => service.slug === slug) ? "Ya existe otro servicio con este nombre. Cambia el nombre para generar un slug distinto." : null); }} />
             <Field label="Slug automático" hint="Identificador interno creado automáticamente a partir del nombre." value={draft.slug} editable={false} onChangeText={() => undefined} />
           </View>
+          <SectorPackSelector sectorPacks={sectorPacks} value={draft.sector_pack_id ?? ""} onChange={(sector_pack_id) => setDraft({ ...draft, sector_pack_id })} />
           <Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />
           {validationError ? <Text style={styles.error}>{validationError}</Text> : null}
-          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving || !draft.name.trim() || slugExists}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving || !draft.name.trim() || slugExists || !draft.sector_pack_id}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
         </View>
       </View>
     </Modal>
   );
+}
+
+function SectorPackSelector({ sectorPacks, value, onChange }: { sectorPacks: SectorPack[]; value: string; onChange: (value: string) => void }) {
+  const options: ReferenceOption[] = sectorPacks.map((pack) => ({ value: pack.id, label: pack.name }));
+  return <ReferenceSelector label="Tipo de servicio" hint="Categoría superior a la que pertenece este servicio. Puedes crear nuevas categorías desde el Diseñador de servicios." value={value} options={options} onChange={onChange} />;
+}
+
+function SectorPackModal({ visible, onClose, onCreate, saving }: { visible: boolean; onClose: () => void; onCreate: (pack: NewSectorPack) => Promise<boolean>; saving: boolean }) {
+  const [draft, setDraft] = useState<NewSectorPack>({ slug: "", name: "", description: "" });
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const submit = async () => {
+    if (!draft.name.trim()) { setValidationError("Escribe un nombre para el tipo de servicio."); return; }
+    if (await onCreate(draft)) {
+      setDraft({ slug: "", name: "", description: "" });
+      setValidationError(null);
+      onClose();
+    }
+  };
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Nuevo tipo de servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.wizardText}>Crea una categoría superior para agrupar servicios del negocio.</Text><View style={styles.formGrid}><Field label="Nombre" hint="Ejemplo: Imprenta, Taller de coches o Empresa de reformas." value={draft.name} onChangeText={(name) => setDraft({ ...draft, name, slug: slugify(name) })} /><Field label="Slug automático" value={draft.slug} editable={false} onChangeText={() => undefined} /></View><Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />{validationError ? <Text style={styles.error}>{validationError}</Text> : null}<View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={saving || !draft.name.trim() || !draft.slug}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Crear tipo"}</Text></Pressable></View></View></View></Modal>;
 }
 
 function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; onClose: () => void; onOpenHelp: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
@@ -2282,6 +2343,7 @@ const styles = StyleSheet.create({
   tableHeader: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#dbe6df", paddingHorizontal: 2, paddingVertical: 8 },
   tableHeaderLabel: { color: "#61736a", fontSize: 11, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.4 },
   tableRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingVertical: 12, gap: 12 },
+  serviceCategoryTitle: { color: "#258269", fontSize: 12, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase", paddingTop: 14, paddingBottom: 6 },
   knowledgeTableRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: "#edf1ee", paddingVertical: 12, gap: 18 },
   tableMain: { flex: 1, minWidth: 0 },
   knowledgeMeta: { width: 180 },
