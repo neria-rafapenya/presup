@@ -189,7 +189,17 @@ def summary(settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # no
     try:
         with db_session(settings) as conn:
             tenant = conn.execute(
-                "select id, name, slug, default_locale from public.horekia_tenants where id = %s",
+                """
+                select t.id,
+                       coalesce(nullif(trim(p.display_name), ''),
+                                nullif(trim(p.legal_name), ''),
+                                t.name) as name,
+                       t.slug,
+                       t.default_locale
+                from public.horekia_tenants t
+                left join public.horekia_tenant_profiles p on p.tenant_id = t.id
+                where t.id = %s
+                """,
                 (POC_TENANT_ID,),
             ).fetchone()
             tenant_settings = conn.execute(
