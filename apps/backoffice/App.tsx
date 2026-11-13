@@ -1125,6 +1125,7 @@ function TenantProfileForm({ profile, setProfile, serviceTypes, onSave, onUpload
         <Field label="Ciudad de referencia" hint="Punto de partida desde el que se calcula la distancia hasta la ubicación indicada por el cliente." value={profile.city ?? ""} onChangeText={(city) => update({ city })} />
         <Field label="Radio de acción (km)" hint="Distancia máxima que quieres atender desde la ciudad de referencia. Por ejemplo, 100 km." value={String(profile.service_radius_km ?? 100)} keyboardType="decimal-pad" onChangeText={(value) => update({ service_radius_km: Number(value.replace(",", ".")) || 0 })} />
       </View>
+      <Text style={styles.sectionLabel}>Datos fiscales y contacto</Text>
       <View style={styles.formGrid}>
         <Field label="NIF/CIF" value={profile.tax_id ?? ""} onChangeText={(tax_id) => update({ tax_id })} />
         <Field label="Teléfono" value={profile.contact_phone ?? ""} onChangeText={(contact_phone) => update({ contact_phone })} />
