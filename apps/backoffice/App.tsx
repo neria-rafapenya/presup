@@ -163,8 +163,9 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.screen ?? (isWizardCompleted() ? "dashboard" : "wizard"));
-  const [designerRouteServiceId, setDesignerRouteServiceId] = useState<string | null>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.serviceId ?? null);
-  const [designerPage, setDesignerPage] = useState<number>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.page ?? 1);
+  const initialRoute = routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname);
+  const [designerRouteServiceId, setDesignerRouteServiceId] = useState<string | null>(() => initialRoute?.serviceId ?? null);
+  const [designerPage, setDesignerPage] = useState<number>(() => initialRoute?.page ?? 1);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
