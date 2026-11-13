@@ -4,6 +4,7 @@ import base64
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import json
 import re
 import secrets
@@ -14,7 +15,7 @@ import urllib.error
 import urllib.request
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 import certifi
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -62,6 +63,19 @@ class ConversationStart(BaseModel):
 class CustomerAccountComplete(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     password_confirmation: str = Field(min_length=8, max_length=128)
+
+
+class CustomerLogin(BaseModel):
+    email: str = Field(min_length=5, max_length=240)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized):
+            raise ValueError("Escribe un email válido")
+        return normalized
 
 
 class ChatMessage(BaseModel):
@@ -447,6 +461,22 @@ def _hash_customer_password(password: str) -> str:
     )
 
 
+def _verify_customer_password(password: str, stored_hash: str | None) -> bool:
+    if not stored_hash:
+        return False
+    try:
+        algorithm, iterations_text, salt_text, digest_text = stored_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_text)
+        salt = base64.urlsafe_b64decode(salt_text.encode("ascii"))
+        expected = base64.urlsafe_b64decode(digest_text.encode("ascii"))
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return False
+
+
 def _issue_customer_session(conn: Any, tenant_id: UUID, customer_id: UUID) -> str:
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -474,6 +504,23 @@ def _customer_for_session(conn: Any, tenant_id: UUID, token: str | None) -> Any 
         """,
         (tenant_id, token_hash),
     ).fetchone()
+
+
+def _tenant_by_slug(conn: Any, tenant_slug: str) -> dict[str, Any]:
+    tenant = conn.execute(
+        "select id, name, slug from public.horekia_tenants where slug = %s and status = 'active'",
+        (tenant_slug,),
+    ).fetchone()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return tenant
+
+
+def _require_customer_session(conn: Any, tenant_id: UUID, token: str | None) -> Any:
+    customer = _customer_for_session(conn, tenant_id, token)
+    if not customer:
+        raise HTTPException(status_code=401, detail="La sesión ha caducado. Vuelve a iniciar sesión")
+    return customer
 
 
 def _quote_response(quote: dict[str, Any], calculation: dict[str, Any]) -> dict[str, Any]:
@@ -592,9 +639,7 @@ def _create_quote(conn: Any, tenant_id: UUID, request_id: UUID, job_type_id: UUI
 @router.get("/tenants/{tenant_slug}/services")
 def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:  # noqa: B008
     with db_session(settings) as conn:
-        tenant = conn.execute("select id, name, slug from public.horekia_tenants where slug = %s and status = 'active'", (tenant_slug,)).fetchone()
-        if not tenant:
-            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        tenant = _tenant_by_slug(conn, tenant_slug)
         return conn.execute(
             """
             select j.slug, j.name, j.description, j.created_at,
@@ -608,6 +653,114 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
             """,
             (tenant["id"],),
         ).fetchall()
+
+
+@router.post("/tenants/{tenant_slug}/auth/login")
+def customer_login(tenant_slug: str, payload: CustomerLogin, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    with db_session(settings) as conn:
+        tenant = _tenant_by_slug(conn, tenant_slug)
+        customer = conn.execute(
+            """
+            select id, name, email, account_password_hash
+            from public.horekia_customers
+            where tenant_id = %s and lower(email) = %s and account_password_hash is not null
+            order by account_created_at desc nulls last, created_at desc
+            limit 1
+            """,
+            (tenant["id"], payload.email),
+        ).fetchone()
+        if not customer or not _verify_customer_password(payload.password, customer["account_password_hash"]):
+            raise HTTPException(status_code=401, detail="Email o contraseña incorrectos")
+        conn.execute(
+            "update public.horekia_customers set last_login_at = now() where tenant_id = %s and id = %s",
+            (tenant["id"], customer["id"]),
+        )
+        token = _issue_customer_session(conn, tenant["id"], customer["id"])
+        return {
+            "status": "authenticated",
+            "session_token": token,
+            "customer": {"id": str(customer["id"]), "name": customer["name"], "email": customer["email"]},
+        }
+
+
+@router.post("/tenants/{tenant_slug}/auth/logout")
+def customer_logout(tenant_slug: str, customer_session: str | None = Header(default=None, alias="X-Customer-Session"), settings: Settings = Depends(get_settings)) -> dict[str, str]:  # noqa: B008
+    with db_session(settings) as conn:
+        tenant = _tenant_by_slug(conn, tenant_slug)
+        if customer_session:
+            token_hash = hashlib.sha256(customer_session.encode("utf-8")).hexdigest()
+            conn.execute(
+                "delete from public.horekia_customer_sessions where tenant_id = %s and token_hash = %s",
+                (tenant["id"], token_hash),
+            )
+        return {"status": "signed_out"}
+
+
+@router.get("/tenants/{tenant_slug}/account")
+def customer_account(tenant_slug: str, customer_session: str | None = Header(default=None, alias="X-Customer-Session"), settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    with db_session(settings) as conn:
+        tenant = _tenant_by_slug(conn, tenant_slug)
+        customer = _require_customer_session(conn, tenant["id"], customer_session)
+        profile = conn.execute(
+            "select id, name, email, phone, account_created_at, last_login_at from public.horekia_customers where tenant_id = %s and id = %s",
+            (tenant["id"], customer["id"]),
+        ).fetchone()
+        quote_rows = conn.execute(
+            """
+            select q.id, q.status, q.currency, q.subtotal, q.tax_amount, q.total, q.valid_until,
+                   q.created_at, q.updated_at, q.calculation_snapshot,
+                   r.id as request_id, r.status as request_status, r.created_at as request_created_at,
+                   j.id as job_type_id, j.slug as service_slug, j.name as service_name
+            from public.horekia_quotes q
+            join public.horekia_requests r on r.tenant_id = q.tenant_id and r.id = q.request_id
+            left join public.horekia_job_types j on j.tenant_id = r.tenant_id and j.id = r.job_type_id
+            where q.tenant_id = %s and r.customer_id = %s
+            order by q.created_at desc
+            """,
+            (tenant["id"], customer["id"]),
+        ).fetchall()
+        quotes: list[dict[str, Any]] = []
+        for quote in quote_rows:
+            snapshot = quote.get("calculation_snapshot") or {}
+            result = dict(quote)
+            result.pop("calculation_snapshot", None)
+            result["lines"] = snapshot.get("lines", []) if isinstance(snapshot, dict) else []
+            quotes.append(result)
+        return {"tenant": tenant, "customer": profile, "quotes": quotes}
+
+
+@router.post("/tenants/{tenant_slug}/quotes/{quote_id}/request-execution")
+def request_quote_execution(tenant_slug: str, quote_id: UUID, customer_session: str | None = Header(default=None, alias="X-Customer-Session"), settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    with db_session(settings) as conn:
+        tenant = _tenant_by_slug(conn, tenant_slug)
+        customer = _require_customer_session(conn, tenant["id"], customer_session)
+        quote = conn.execute(
+            """
+            select q.id, q.status, q.request_id, r.customer_id
+            from public.horekia_quotes q
+            join public.horekia_requests r on r.tenant_id = q.tenant_id and r.id = q.request_id
+            where q.tenant_id = %s and q.id = %s and r.customer_id = %s
+            """,
+            (tenant["id"], quote_id, customer["id"]),
+        ).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+        if quote["status"] in {"rejected", "expired"}:
+            raise HTTPException(status_code=409, detail="Este presupuesto ya no está disponible para solicitarlo")
+        if quote["status"] != "accepted":
+            conn.execute(
+                "update public.horekia_quotes set status = 'accepted', updated_at = now() where tenant_id = %s and id = %s",
+                (tenant["id"], quote_id),
+            )
+            conn.execute(
+                "insert into public.horekia_quote_events (tenant_id, quote_id, event_type, payload) values (%s, %s, 'accepted', %s)",
+                (tenant["id"], quote_id, Jsonb({"source": "public_customer", "action": "request_execution", "customer_id": str(customer["id"])})),
+            )
+            conn.execute(
+                "insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'system', %s, %s, %s)",
+                (tenant["id"], quote["request_id"], "El cliente ha solicitado llevar a cabo este presupuesto.", Jsonb({"quote_id": str(quote_id), "action": "request_execution"}), Jsonb({"source": "customer_account"})),
+            )
+        return {"status": "accepted", "quote_id": str(quote_id), "message": "Hemos enviado tu solicitud a la empresa."}
 
 
 @router.post("/tenants/{tenant_slug}/conversations", status_code=status.HTTP_201_CREATED)

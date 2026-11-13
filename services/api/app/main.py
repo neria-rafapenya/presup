@@ -18,7 +18,7 @@ app.add_middleware(
     ],
     allow_credentials=False,
     allow_methods=["DELETE", "GET", "PATCH", "POST", "PUT"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-Customer-Session"],
 )
 app.include_router(backoffice_router)
 app.include_router(public_router)
