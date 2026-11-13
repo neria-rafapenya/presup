@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "documentation" | "designer" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "documentation" | "designer" | "bulk-services" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -30,6 +30,8 @@ type Summary = {
 
 type JobType = { id: string; slug: string; name: string; description?: string | null; status: string };
 type NewService = { slug: string; name: string; description: string };
+type BulkServiceDraft = NewService & { id: number };
+type BulkCreateResult = { created: number; errors: string[] };
 type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
 type KnowledgeSummary = { total: number; by_kind: { kind: string; count: number }[] };
 type KnowledgeEntry = { id: string; kind: string; title: string; content?: string | null; source_name?: string | null };
@@ -67,6 +69,9 @@ type BlueprintRule = { code: string; kind: string; priority: number; definition:
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
 type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }>; replace?: boolean };
 type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "cleaning" | "gardening" | "photography" | "transport" | "it_support" | "consulting" | "training" | "maintenance";
+
+let bulkDraftSequence = 0;
+const newBulkServiceDraft = (): BulkServiceDraft => ({ id: ++bulkDraftSequence, slug: "", name: "", description: "" });
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
@@ -129,6 +134,7 @@ function routeFromPath(pathname: string): AppRoute | null {
   if (path === "/knowledge") return { screen: "knowledge" };
   if (path === "/documentation") return { screen: "documentation" };
   if (path === "/designer") return { screen: "designer" };
+  if (path === "/designer/bulk-services") return { screen: "bulk-services" };
   if (path === "/requests") return { screen: "requests" };
   if (path === "/quotes") return { screen: "quotes" };
   if (path === "/") return { screen: isWizardCompleted() ? "dashboard" : "wizard" };
@@ -138,6 +144,7 @@ function routeFromPath(pathname: string): AppRoute | null {
 function routePath(screen: Screen, serviceId?: string): string {
   if (screen === "designer" && serviceId) return `/services/${encodeURIComponent(serviceId)}/design`;
   if (screen === "designer") return "/designer";
+  if (screen === "bulk-services") return "/designer/bulk-services";
   return `/${screen}`;
 }
 
@@ -313,6 +320,33 @@ export default function App() {
     } catch {
       setError("No se ha podido crear el servicio. Revisa que el slug no esté repetido.");
       return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createServicesBulk = async (newServices: NewService[]): Promise<BulkCreateResult> => {
+    setSaving(true);
+    setError(null);
+    const errors: string[] = [];
+    let created = 0;
+    try {
+      for (const newService of newServices) {
+        try {
+          await api<JobType>("/api/v1/backoffice/job-types", {
+            method: "POST",
+            body: JSON.stringify(newService),
+          });
+          created += 1;
+        } catch {
+          errors.push(`${newService.name}: no se ha podido crear. Revisa que el slug no esté repetido.`);
+        }
+      }
+      await load();
+      return { created, errors };
+    } catch {
+      setError("No se ha podido completar la creación masiva de servicios.");
+      return { created, errors: [...errors, "No se ha podido actualizar la lista de servicios."] };
     } finally {
       setSaving(false);
     }
@@ -522,7 +556,7 @@ export default function App() {
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
           <Text style={[styles.navGroupLabel, (screen === "designer" || screen === "knowledge") && styles.navGroupLabelActive]}>Servicios y fichas</Text>
           <View style={styles.subnav}>
-            <NavButton label="Diseñador de servicios" child active={screen === "designer"} onPress={() => { setDesignerReturnScreen("wizard"); navigate("designer", designerService?.id ?? undefined); }} />
+            <NavButton label="Diseñador de servicios" child active={screen === "designer" || screen === "bulk-services"} onPress={() => { setDesignerReturnScreen("wizard"); navigate("designer", designerService?.id ?? undefined); }} />
             <NavButton label="Base de conocimiento" child active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           </View>
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
@@ -546,7 +580,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onCreate={createService} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onCreate={createService} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -576,6 +610,7 @@ export default function App() {
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
               {screen === "documentation" ? <Documentation /> : null}
+              {screen === "bulk-services" ? <BulkServicesPage services={services} onCreateMany={createServicesBulk} onBack={() => navigate("designer")} saving={saving} /> : null}
               {screen === "requests" ? <RequestsPage requests={requests} onCalculate={calculateRequestQuote} onStatus={updateRequestStatus} saving={saving} /> : null}
               {screen === "quotes" ? <QuotesPage quotes={quotes} onStatus={updateQuoteStatus} saving={saving} /> : null}
             </>
@@ -1269,10 +1304,68 @@ function ServiceTable({ services, onDesign, onDelete, saving, emptyText }: { ser
   </View>;
 }
 
-function DesignerServicePicker({ services, onCreate, onDesign, onDelete, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
+function DesignerServicePicker({ services, onCreate, onOpenBulk, onDesign, onDelete, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onOpenBulk: () => void; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
-  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></View>;
+  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><View style={styles.designerHeaderActions}><Pressable style={styles.secondaryButton} onPress={onOpenBulk} disabled={saving}><Text style={styles.secondaryLabel}>Creador masivo de servicios</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></View>;
+}
+
+function BulkServicesPage({ services, onCreateMany, onBack, saving }: { services: JobType[]; onCreateMany: (services: NewService[]) => Promise<BulkCreateResult>; onBack: () => void; saving: boolean }) {
+  const [drafts, setDrafts] = useState<BulkServiceDraft[]>(() => [newBulkServiceDraft()]);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+
+  const updateDraft = (id: number, patch: Partial<NewService>) => {
+    setDrafts((current) => current.map((draft) => draft.id === id ? { ...draft, ...patch } : draft));
+    setValidationError(null);
+    setResultMessage(null);
+  };
+
+  const updateName = (draft: BulkServiceDraft, name: string) => updateDraft(draft.id, { name, slug: slugify(name) });
+  const removeDraft = (id: number) => setDrafts((current) => current.length > 1 ? current.filter((draft) => draft.id !== id) : current);
+
+  const validate = () => {
+    if (drafts.some((draft) => !draft.name.trim())) return "Completa el nombre de cada servicio antes de continuar.";
+    const slugs = drafts.map((draft) => draft.slug);
+    if (slugs.some((slug) => !slug)) return "No se ha podido generar el slug de uno de los servicios.";
+    const duplicateSlug = slugs.find((slug, index) => slugs.indexOf(slug) !== index);
+    if (duplicateSlug) return `Hay dos servicios con el mismo slug: ${duplicateSlug}. Cambia uno de los nombres.`;
+    const existingSlug = slugs.find((slug) => services.some((service) => service.slug === slug));
+    if (existingSlug) return `Ya existe un servicio con el slug ${existingSlug}. Cambia ese nombre antes de crear la pila.`;
+    return null;
+  };
+
+  const submit = async () => {
+    const error = validate();
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    const result = await onCreateMany(drafts.map(({ id: _id, ...draft }) => draft));
+    if (result.errors.length === 0) {
+      setResultMessage(`Se han creado ${result.created} servicio(s) correctamente.`);
+      setDrafts([newBulkServiceDraft()]);
+      return;
+    }
+    setValidationError(result.errors.join(" "));
+    if (result.created > 0) setResultMessage(`Se han creado ${result.created} servicio(s). Revisa los servicios que no se han podido crear.`);
+  };
+
+  return <View style={styles.bulkServicesPage}>
+    <View style={styles.operationsIntro}><Text style={styles.sectionTitle}>Creador masivo de servicios</Text><Text style={styles.sectionText}>Prepara varios servicios de una vez. Cada bloque se convertirá en un servicio independiente y su slug se generará automáticamente a partir del nombre.</Text></View>
+    {resultMessage ? <Text style={styles.success}>{resultMessage}</Text> : null}
+    {validationError ? <Text style={styles.error}>{validationError}</Text> : null}
+    {drafts.map((draft, index) => <View style={styles.bulkServiceCard} key={draft.id}>
+      <View style={styles.bulkServiceHeader}><Text style={styles.panelTitle}>Servicio {index + 1}</Text>{drafts.length > 1 ? <Pressable style={styles.deleteButton} onPress={() => removeDraft(draft.id)} disabled={saving}><Text style={styles.deleteLabel}>Quitar</Text></Pressable> : null}</View>
+      <View style={styles.formGrid}>
+        <Field label="Nombre" hint="Nombre visible del servicio, por ejemplo: Tarjetas de visita." value={draft.name} onChangeText={(name) => updateName(draft, name)} />
+        <Field label="Slug automático" hint="Identificador interno generado a partir del nombre." value={draft.slug} editable={false} onChangeText={() => undefined} />
+      </View>
+      <Field label="Descripción" value={draft.description} onChangeText={(description) => updateDraft(draft.id, { description })} />
+    </View>)}
+    <View style={styles.bulkActions}><Pressable style={styles.secondaryButton} onPress={() => { setDrafts((current) => [...current, newBulkServiceDraft()]); setValidationError(null); setResultMessage(null); }} disabled={saving}><Text style={styles.secondaryLabel}>+ Añadir otro servicio</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Creando servicios…" : `Crear ${drafts.length} servicio(s)`}</Text></Pressable></View>
+    <Pressable style={styles.textAction} onPress={onBack}><Text style={styles.textActionLabel}>Volver al diseñador</Text></Pressable>
+  </View>;
 }
 
 function TutorialVideo() {
@@ -1937,7 +2030,7 @@ function QuotesPage({ quotes, onStatus, saving }: { quotes: QuoteSummary[]; onSt
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Dashboard", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Dashboard", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", "bulk-services": "Creador masivo de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
@@ -2000,6 +2093,7 @@ const styles = StyleSheet.create({
   designerFullScreenScroll: { maxHeight: "100%", flex: 1 },
   designerPicker: { flex: 1, padding: 42, maxWidth: 1200, width: "100%", alignSelf: "center" },
   designerWorkspaceHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 },
+  designerHeaderActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   workspaceTitle: { color: "#17211f", fontSize: 30, fontWeight: "900", marginTop: 5 },
   workspaceText: { color: "#526078", fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 720 },
   hidden: { display: "none" },
@@ -2193,6 +2287,10 @@ const styles = StyleSheet.create({
   listMeta: { color: "#718078", fontSize: 12, marginTop: 4 },
   listArrow: { color: "#258269", fontSize: 28 },
   operationsPage: { gap: 12 },
+  bulkServicesPage: { gap: 12 },
+  bulkServiceCard: { backgroundColor: "#ffffff", borderRadius: 12, borderWidth: 1, borderColor: "#e1e8e3", padding: 20, marginBottom: 2 },
+  bulkServiceHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  bulkActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 4 },
   operationsIntro: { backgroundColor: "#ffffff", borderRadius: 14, borderWidth: 1, borderColor: "#e1e8e3", padding: 22, marginBottom: 4 },
   sectionTitle: { color: "#17332d", fontSize: 19, fontWeight: "900" },
   sectionText: { color: "#61736a", fontSize: 15, lineHeight: 21, marginTop: 7 },
