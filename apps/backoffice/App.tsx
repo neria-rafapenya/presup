@@ -43,6 +43,7 @@ type QuoteSummary = { id: string; request_id?: string | null; status: string; cu
 type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
+  service_type_id: string | null;
   tax_id: string | null;
   contact_name: string | null;
   contact_role: string | null;
@@ -636,7 +637,7 @@ export default function App() {
               ) : null}
               {screen === "dashboard" ? <Dashboard summary={summary} /> : null}
               {screen === "company" ? (
-                <Company summary={summary} setSummary={setSummary} profile={profile} setProfile={setProfile} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onSave={saveSettings} saving={saving} />
+                <Company summary={summary} setSummary={setSummary} profile={profile} setProfile={setProfile} serviceTypes={sectorPacks} onSaveProfile={saveProfile} onUploadTemplate={uploadTemplate} onSave={saveSettings} saving={saving} />
               ) : null}
               {screen === "knowledge" ? (
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
@@ -764,7 +765,7 @@ function Wizard({ summary, profile, setProfile, services, sectorPacks, knowledge
       </View>
       <View style={styles.panel}>
         {step === 0 ? (
-          <Company summary={summary} profile={profile} setProfile={setProfile} onSaveProfile={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} embedded />
+          <Company summary={summary} profile={profile} setProfile={setProfile} serviceTypes={sectorPacks} onSaveProfile={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} embedded />
         ) : null}
         {step === 1 ? (
           <Services services={services} sectorPacks={sectorPacks} onCreate={onCreateService} onDelete={onDeleteService} onDesignService={onDesignService} saving={saving} embedded />
@@ -1088,7 +1089,7 @@ function KnowledgeTable({ entries, onUpdate, onDelete, saving }: { entries: Know
   </View>;
 }
 
-function TenantProfileForm({ profile, setProfile, onSave, onUploadTemplate, saving, fallbackName }: { profile: TenantProfile; setProfile: (profile: TenantProfile) => void; onSave: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; saving: boolean; fallbackName: string }) {
+function TenantProfileForm({ profile, setProfile, serviceTypes, onSave, onUploadTemplate, saving, fallbackName }: { profile: TenantProfile; setProfile: (profile: TenantProfile) => void; serviceTypes: SectorPack[]; onSave: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; saving: boolean; fallbackName: string }) {
   const update = (patch: Partial<TenantProfile>) => setProfile({ ...profile, ...patch });
   const chooseTemplate = () => {
     if (typeof document === "undefined") return;
@@ -1108,6 +1109,8 @@ function TenantProfileForm({ profile, setProfile, onSave, onUploadTemplate, savi
         <Field label="Nombre comercial" value={profile.display_name ?? ""} onChangeText={(display_name) => update({ display_name })} />
         <Field label="Razón social" value={profile.legal_name ?? ""} onChangeText={(legal_name) => update({ legal_name })} />
       </View>
+      <SectorPackSelector sectorPacks={serviceTypes} value={profile.service_type_id ?? ""} onChange={(service_type_id) => update({ service_type_id })} />
+      <Text style={styles.fieldHelp}>El frontend público solo mostrará los servicios pertenecientes a este tipo de servicio.</Text>
       <View style={styles.formGrid}>
         <Field label="NIF/CIF" value={profile.tax_id ?? ""} onChangeText={(tax_id) => update({ tax_id })} />
         <Field label="Teléfono" value={profile.contact_phone ?? ""} onChangeText={(contact_phone) => update({ contact_phone })} />
@@ -1275,13 +1278,13 @@ function StatusRow({ label, value, good }: { label: string; value: string; good:
   return <View style={styles.statusRow}><Text style={styles.statusRowLabel}>{label}</Text><Text style={[styles.statusRowValue, !good && styles.statusOff]}>{value}</Text></View>;
 }
 
-function Company({ summary, setSummary, profile, setProfile, onSaveProfile, onUploadTemplate, onSave, saving, embedded = false }: { summary: Summary; setSummary?: (summary: Summary) => void; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onSave?: () => void; saving: boolean; embedded?: boolean }) {
+function Company({ summary, setSummary, profile, setProfile, serviceTypes, onSaveProfile, onUploadTemplate, onSave, saving, embedded = false }: { summary: Summary; setSummary?: (summary: Summary) => void; profile: TenantProfile; setProfile: (profile: TenantProfile) => void; serviceTypes: SectorPack[]; onSaveProfile: (profile: TenantProfile) => Promise<boolean>; onUploadTemplate: (file: File) => Promise<boolean>; onSave?: () => void; saving: boolean; embedded?: boolean }) {
   const update = (patch: Partial<Summary["settings"]>) => {
     if (setSummary) setSummary({ ...summary, settings: { ...summary.settings, ...patch } });
   };
   return (
     <View>
-      {!embedded ? <View style={styles.panel}><Text style={styles.panelTitle}>Datos de empresa</Text><TenantProfileForm profile={profile} setProfile={setProfile} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} /></View> : <><Text style={styles.panelTitle}>1. Datos de empresa</Text><TenantProfileForm profile={profile} setProfile={setProfile} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} /></>}
+      {!embedded ? <View style={styles.panel}><Text style={styles.panelTitle}>Datos de empresa</Text><TenantProfileForm profile={profile} setProfile={setProfile} serviceTypes={serviceTypes} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} /></View> : <><Text style={styles.panelTitle}>1. Datos de empresa</Text><TenantProfileForm profile={profile} setProfile={setProfile} serviceTypes={serviceTypes} onSave={onSaveProfile} onUploadTemplate={onUploadTemplate} saving={saving} fallbackName={summary.tenant.name} /></>}
       {!embedded && setSummary && onSave ? <View style={styles.panel}>
         <Text style={styles.panelTitle}>Configuración de operación</Text>
         <Text style={styles.fieldLabel}>Nombre de la instalación</Text>
@@ -2321,6 +2324,7 @@ const styles = StyleSheet.create({
   statusOff: { color: "#9a6b27" },
   field: { flex: 1, marginBottom: 8 },
   fieldLabel: { color: "#52645b", fontSize: 12, fontWeight: "900", marginBottom: 4 },
+  fieldHelp: { color: "#61736a", fontSize: 12, lineHeight: 18, marginTop: -2, marginBottom: 10 },
   sectionLabel: { color: "#17332d", fontSize: 15, fontWeight: "900", marginTop: 10, marginBottom: 10 },
   readonly: { color: "#17332d", fontSize: 16, paddingBottom: 18 },
   formGrid: { flexDirection: "row", gap: 14 },

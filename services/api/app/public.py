@@ -583,7 +583,9 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
                    st.name as sector_pack_name
             from public.horekia_job_types j
             left join public.horekia_service_types st on st.tenant_id = j.tenant_id and st.id = j.service_type_id
+            left join public.horekia_tenant_profiles tp on tp.tenant_id = j.tenant_id
             where j.tenant_id = %s and j.status = 'active'
+              and (tp.service_type_id is null or j.service_type_id = tp.service_type_id)
             order by j.created_at desc, j.name
             """,
             (tenant["id"],),
