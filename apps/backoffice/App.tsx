@@ -121,7 +121,7 @@ function isWizardCompleted() {
   return window.localStorage.getItem(WIZARD_STORAGE_KEY) === "true";
 }
 
-type AppRoute = { screen: Screen; serviceId?: string };
+type AppRoute = { screen: Screen; serviceId?: string; page?: number };
 
 function routeFromPath(pathname: string): AppRoute | null {
   const path = pathname.replace(/\/+$/, "") || "/";
@@ -133,6 +133,8 @@ function routeFromPath(pathname: string): AppRoute | null {
   if (path === "/services") return { screen: "wizard" };
   if (path === "/knowledge") return { screen: "knowledge" };
   if (path === "/documentation") return { screen: "documentation" };
+  const designerPageMatch = path.match(/^\/designer\/page\/(\d+)$/);
+  if (designerPageMatch) return { screen: "designer", page: Math.max(1, Number(designerPageMatch[1])) };
   if (path === "/designer") return { screen: "designer" };
   if (path === "/designer/bulk-services") return { screen: "bulk-services" };
   if (path === "/requests") return { screen: "requests" };
@@ -141,8 +143,9 @@ function routeFromPath(pathname: string): AppRoute | null {
   return null;
 }
 
-function routePath(screen: Screen, serviceId?: string): string {
+function routePath(screen: Screen, serviceId?: string, page = 1): string {
   if (screen === "designer" && serviceId) return `/services/${encodeURIComponent(serviceId)}/design`;
+  if (screen === "designer" && page > 1) return `/designer/page/${page}`;
   if (screen === "designer") return "/designer";
   if (screen === "bulk-services") return "/designer/bulk-services";
   return `/${screen}`;
@@ -161,6 +164,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 export default function App() {
   const [screen, setScreen] = useState<Screen>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.screen ?? (isWizardCompleted() ? "dashboard" : "wizard"));
   const [designerRouteServiceId, setDesignerRouteServiceId] = useState<string | null>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.serviceId ?? null);
+  const [designerPage, setDesignerPage] = useState<number>(() => routeFromPath(typeof window === "undefined" ? "/" : window.location.pathname)?.page ?? 1);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [services, setServices] = useState<JobType[]>([]);
@@ -270,9 +274,9 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const nextPath = routePath(screen, designerService?.id ?? designerRouteServiceId ?? undefined);
+    const nextPath = routePath(screen, designerService?.id ?? designerRouteServiceId ?? undefined, designerPage);
     if (window.location.pathname !== nextPath) window.history.pushState({}, "", nextPath);
-  }, [screen, designerService, designerRouteServiceId]);
+  }, [screen, designerService, designerRouteServiceId, designerPage]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -281,6 +285,7 @@ export default function App() {
       if (!nextRoute) return;
       setScreen(nextRoute.screen);
       setDesignerRouteServiceId(nextRoute.serviceId ?? null);
+      setDesignerPage(nextRoute.page ?? 1);
       if (nextRoute.screen !== "designer") setDesignerService(null);
     };
     window.addEventListener("popstate", onPopState);
@@ -580,7 +585,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onCreate={createService} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -1280,34 +1285,43 @@ function Services({ services, onCreate, onDelete, onDesignService, saving, embed
   );
 }
 
-function ServiceTable({ services, onDesign, onDelete, saving, emptyText }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (service: JobType) => void; saving: boolean; emptyText: string }) {
+function ServiceTable({ services, onDesign, onDelete, saving, emptyText, page, onPageChange }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (service: JobType) => void; saving: boolean; emptyText: string; page?: number; onPageChange?: (page: number) => void }) {
   const [filter, setFilter] = useState("");
-  const [page, setPage] = useState(1);
+  const [internalPage, setInternalPage] = useState(1);
+  const filterInitialized = useRef(false);
+  const currentPage = page ?? internalPage;
+  const changePage = onPageChange ?? setInternalPage;
   const pageSize = 15;
   const normalizedFilter = filter.trim().toLocaleLowerCase();
   const filteredServices = services.filter((service) => !normalizedFilter || `${service.name} ${service.slug} ${service.status}`.toLocaleLowerCase().includes(normalizedFilter));
   const totalPages = Math.max(1, Math.ceil(filteredServices.length / pageSize));
-  const visibleServices = filteredServices.slice((page - 1) * pageSize, page * pageSize);
+  const visibleServices = filteredServices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  useEffect(() => setPage(1), [filter]);
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    if (!filterInitialized.current) {
+      filterInitialized.current = true;
+      return;
+    }
+    changePage(1);
+  }, [filter]);
+  useEffect(() => {
+    if (currentPage > totalPages) changePage(totalPages);
+  }, [currentPage, totalPages]);
 
   return <View>
     <TextInput style={styles.filterInput} value={filter} onChangeText={setFilter} placeholder="Filtrar por nombre, slug o estado…" />
     {filteredServices.length ? <>
       <View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Servicio</Text><Text style={styles.tableHeaderLabel}>Acciones</Text></View>
       {visibleServices.map((service) => <View style={styles.tableRow} key={service.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{service.name}</Text><Text style={styles.listMeta}>{service.slug} · {service.status}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => onDesign(service)}><Text style={styles.smallButtonLabel}>Diseñar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => onDelete(service)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}
-      <View style={styles.pagination}><Text style={styles.listMeta}>{filteredServices.length} servicio(s){totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View>
+      <View style={styles.pagination}><Text style={styles.listMeta}>{filteredServices.length} servicio(s){totalPages > 1 ? ` · página ${currentPage} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => changePage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => changePage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View>
     </> : <Text style={styles.emptyText}>{filter ? "No hay servicios que coincidan con el filtro." : emptyText}</Text>}
   </View>;
 }
 
-function DesignerServicePicker({ services, onCreate, onOpenBulk, onDesign, onDelete, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onOpenBulk: () => void; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
+function DesignerServicePicker({ services, page, onPageChange, onCreate, onOpenBulk, onDesign, onDelete, saving }: { services: JobType[]; page: number; onPageChange: (page: number) => void; onCreate: (service: NewService) => Promise<boolean>; onOpenBulk: () => void; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
-  return <ScrollView style={styles.designerPickerScroll} contentContainerStyle={styles.designerPicker} showsVerticalScrollIndicator><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><View style={styles.designerHeaderActions}><Pressable style={styles.secondaryButton} onPress={onOpenBulk} disabled={saving}><Text style={styles.secondaryLabel}>Creador masivo de servicios</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></ScrollView>;
+  return <ScrollView style={styles.designerPickerScroll} contentContainerStyle={styles.designerPicker} showsVerticalScrollIndicator><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><View style={styles.designerHeaderActions}><Pressable style={styles.secondaryButton} onPress={onOpenBulk} disabled={saving}><Text style={styles.secondaryLabel}>Creador masivo de servicios</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} page={page} onPageChange={onPageChange} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></ScrollView>;
 }
 
 function BulkServicesPage({ services, onCreateMany, onBack, saving }: { services: JobType[]; onCreateMany: (services: NewService[]) => Promise<BulkCreateResult>; onBack: () => void; saving: boolean }) {
