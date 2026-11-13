@@ -82,6 +82,7 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     field_key: str | None = Field(default=None, max_length=64)
     session_token: str | None = Field(default=None, min_length=20, max_length=240)
+    product_sku: str | None = Field(default=None, max_length=120)
 
 
 def _blueprint(conn: Any, tenant_id: UUID, job_type_id: UUID) -> dict[str, Any]:
@@ -282,19 +283,41 @@ def _friendly_retry(field: dict[str, Any], intake: dict[str, Any] | None = None)
     return f"Gracias. Para continuar necesito que me indiques {label}."
 
 
-def _public_field(field: dict[str, Any] | None, intake: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def _catalog_product_view(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    return {
+        "sku": item.get("sku"),
+        "name": item.get("name"),
+        "description": item.get("description"),
+        "unit": item.get("unit"),
+        "base_price": str(item.get("base_price")) if item.get("base_price") is not None else None,
+        "currency": item.get("currency"),
+        "metadata": metadata,
+    }
+
+
+def _public_field(field: dict[str, Any] | None, intake: dict[str, Any] | None = None, items: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     if not field:
         return None
     if not _field_is_visible(field, intake):
         return None
     field = _effective_field(field, intake)
-    return {
+    public_field = {
         "key": field.get("key"),
         "label": field.get("label"),
         "type": field.get("type"),
         "unit": field.get("unit"),
         "options": field.get("options", []),
     }
+    product_options = field.get("product_options")
+    if isinstance(product_options, dict) and items:
+        products_by_sku = {str(item.get("sku")): item for item in items if item.get("sku")}
+        public_field["products_by_option"] = {
+            str(option): [_catalog_product_view(products_by_sku[sku]) for sku in skus if str(sku) in products_by_sku]
+            for option, skus in product_options.items()
+            if isinstance(skus, list)
+        }
+    return public_field
 
 
 def _normalize_location_with_gemini(user_location: str, settings: Settings) -> str | None:
@@ -787,7 +810,7 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
             (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in fields if field.get("required")])),
         ).fetchone()
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant["id"], request["id"], opening, Jsonb({"service": service["slug"]}), Jsonb({"source": "service_blueprint"})))
-        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field, {}), "intake_data": {}, "status": request["status"]}
+        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field, {}, blueprint["items"]), "intake_data": {}, "status": request["status"]}
 
 
 @router.post("/conversations/{request_id}/account")
@@ -881,6 +904,14 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         coverage = None
         if field:
             value = _coerce_field(field, payload.content, intake)
+            product_options = field.get("product_options") if isinstance(field.get("product_options"), dict) else {}
+            if value is not None and product_options:
+                allowed_products = [str(item) for item in product_options.get(str(value), [])] if isinstance(product_options.get(str(value)), list) else []
+                if not payload.product_sku or payload.product_sku not in allowed_products:
+                    effective_field = _effective_field(field, intake)
+                    reply = "Elige uno de los modelos disponibles para esa prenda para continuar."
+                    conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "product_catalog"})))
+                    return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(effective_field, intake, blueprint["items"]), "intake_data": intake}
             if value is None:
                 effective_field = _effective_field(field, intake)
                 reply = _ask_gemini_public(
@@ -890,7 +921,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     settings=settings,
                 ) or _friendly_retry(field, intake)
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
-                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake), "intake_data": intake}
+                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake, blueprint["items"]), "intake_data": intake}
             if field.get("key") == COVERAGE_FIELD_KEY:
                 profile = conn.execute("select city, service_radius_km, display_name from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
                 requested_location = str(value)
@@ -911,7 +942,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     else:
                         reply = "No he podido localizar esa ubicación. Indícame una ciudad o un código postal de cinco cifras para comprobar si está dentro de nuestro radio de actuación."
                     conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
-                    return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake), "intake_data": intake, "coverage": coverage}
+                    return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake, blueprint["items"]), "intake_data": intake, "coverage": coverage}
                 if coverage["status"] == "outside_radius":
                     intake[field["key"]] = value
                     distance = f"{coverage['distance_km']:.1f}".replace(".", ",")
@@ -928,6 +959,8 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
                     return {"request_id": str(request_id), "status": "closed", "reply": reply, "field": None, "intake_data": intake, "coverage": coverage, "eligible": False}
             intake[field["key"]] = value
+            if payload.product_sku and product_options:
+                intake[f"{field['key']}_product_sku"] = payload.product_sku
         next_field = _next_missing(fields, intake)
         missing = [item["key"] for item in fields if item.get("required") and item["key"] not in intake and _field_is_visible(item, intake)]
         if next_field:
@@ -940,7 +973,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             if coverage:
                 structured_data["coverage"] = coverage
             conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(structured_data), Jsonb({"source": "service_blueprint"})))
-            response = {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field, intake), "intake_data": intake}
+            response = {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field, intake, blueprint["items"]), "intake_data": intake}
             if coverage:
                 response["coverage"] = coverage
                 response["eligible"] = True

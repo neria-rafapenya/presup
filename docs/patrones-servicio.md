@@ -18,6 +18,26 @@ Un patrón de servicio describe cómo un tenant vende, pregunta y calcula un tip
 - `rules`: mínimos, factores, recargos y fórmulas. Se ejecutarán en el motor de cálculo, no en Gemini.
 - `measures`: valores derivados como superficie, horas o unidades facturables.
 
+## Productos concretos y catálogo
+
+Un concepto genérico como `camiseta manga larga` puede asociarse a uno o varios productos
+concretos del catálogo. Los productos se cargan como filas `product` del CSV y guardan sus
+datos agnósticos en `metadata.catalog_product`: categoría jerárquica, marca, modelo, material,
+gramaje, colores, tallas, imagen y referencia externa.
+
+La pregunta de tipo `choice` puede incluir `product_options`, por ejemplo:
+
+```json
+{
+  "camiseta manga larga": ["gildan-64400"],
+  "sudadera": ["gildan-18500"]
+}
+```
+
+En el frontend, el cliente selecciona primero la opción y después el modelo en una galería.
+La conversación conserva el SKU elegido para que las reglas deterministas apliquen el precio
+del producto exacto. Más adelante estos productos podrán sincronizarse con el ERP del tenant.
+
 ## Ejemplo: bolsas impresas
 
 Campos habituales:

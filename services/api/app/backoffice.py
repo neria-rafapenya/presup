@@ -87,6 +87,7 @@ class BlueprintField(BaseModel):
     example: str | None = Field(default=None, max_length=500)
     depends_on: dict[str, Any] | None = None
     visible_when: dict[str, Any] | None = None
+    product_options: dict[str, list[str]] | None = None
 
 
 class BlueprintItem(BaseModel):
@@ -656,6 +657,17 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
                     raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe depender de una pregunta anterior.")
                 if expected_value not in payload.fields[controller_index].options:
                     raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» usa una opción inexistente: {expected_value}")
+
+            catalog_skus = {item.sku for item in payload.items}
+            for field in payload.fields:
+                if not field.product_options:
+                    continue
+                for option, product_skus in field.product_options.items():
+                    if option not in field.options:
+                        raise HTTPException(status_code=422, detail=f"La asociación de productos de «{field.label}» usa una opción inexistente: {option}")
+                    unknown_skus = sorted(set(product_skus) - catalog_skus)
+                    if unknown_skus:
+                        raise HTTPException(status_code=422, detail=f"La asociación de productos de «{field.label}» referencia SKU inexistentes: {', '.join(unknown_skus)}")
 
             active_schema = conn.execute(
                 """
