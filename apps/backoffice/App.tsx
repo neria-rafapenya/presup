@@ -546,7 +546,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onCreate={createService} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -1269,9 +1269,10 @@ function ServiceTable({ services, onDesign, onDelete, saving, emptyText }: { ser
   </View>;
 }
 
-function DesignerServicePicker({ services, onDesign, onDelete, saving }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
+function DesignerServicePicker({ services, onCreate, onDesign, onDelete, saving }: { services: JobType[]; onCreate: (service: NewService) => Promise<boolean>; onDesign: (service: JobType) => void; onDelete: (jobTypeId: string) => Promise<boolean>; saving: boolean }) {
+  const [modalVisible, setModalVisible] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<JobType | null>(null);
-  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Selecciona un servicio para editar sus preguntas, catálogo, reglas y medidas calculadas.</Text></View></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios. Crea uno desde el paso Oferta del Wizard." /></View><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></View>;
+  return <View style={styles.designerPicker}><View style={styles.designerWorkspaceHeader}><View><Text style={styles.kicker}>CONFIGURACIÓN</Text><Text style={styles.workspaceTitle}>Diseñador de servicios</Text><Text style={styles.workspaceText}>Crea servicios y edita sus preguntas, catálogo, reglas y medidas calculadas.</Text></View><Pressable style={styles.primaryButton} onPress={() => setModalVisible(true)} disabled={saving}><Text style={styles.primaryLabel}>Nuevo servicio</Text></Pressable></View><View style={styles.panel}><Text style={styles.panelTitle}>Selecciona un servicio</Text><ServiceTable services={services} onDesign={onDesign} onDelete={setServiceToDelete} saving={saving} emptyText="Todavía no hay servicios configurados." /></View><ServiceModal visible={modalVisible} services={services} onClose={() => setModalVisible(false)} onCreate={onCreate} saving={saving} subtitle="Añádelo sin salir del diseñador de servicios." /><DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} /></View>;
 }
 
 function TutorialVideo() {
@@ -1287,7 +1288,7 @@ function DeleteKnowledgeModal({ entry, onClose, onConfirm, saving }: { entry: Kn
   return <Modal visible={Boolean(entry)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar entrada</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{entry?.title}</Text><Text style={styles.wizardText}>{entry?.kind === "product" ? "Se archivará la entrada y también su partida de catálogo asociada." : "Se archivará esta entrada de la base de conocimiento."}</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer desde el backoffice.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
-function ServiceModal({ visible, services, onClose, onCreate, saving }: { visible: boolean; services: JobType[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean }) {
+function ServiceModal({ visible, services, onClose, onCreate, saving, subtitle = "Añádelo sin salir del contexto del Wizard o del catálogo." }: { visible: boolean; services: JobType[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean; subtitle?: string }) {
   const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "" });
   const [validationError, setValidationError] = useState<string | null>(null);
   const slugExists = Boolean(draft.slug) && services.some((service) => service.slug === draft.slug);
@@ -1311,7 +1312,7 @@ function ServiceModal({ visible, services, onClose, onCreate, saving }: { visibl
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}><Text style={styles.panelTitle}>Añadir servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View>
-          <Text style={styles.wizardText}>Añádelo sin salir del contexto del Wizard o del catálogo.</Text>
+          <Text style={styles.wizardText}>{subtitle}</Text>
           <View style={styles.formGrid}>
             <Field label="Nombre" hint="Es el nombre visible del producto o servicio que quieres presupuestar." value={draft.name} onChangeText={(name) => { const slug = slugify(name); setDraft({ ...draft, name, slug }); setValidationError(services.some((service) => service.slug === slug) ? "Ya existe otro servicio con este nombre. Cambia el nombre para generar un slug distinto." : null); }} />
             <Field label="Slug automático" hint="Identificador interno creado automáticamente a partir del nombre." value={draft.slug} editable={false} onChangeText={() => undefined} />
