@@ -1120,6 +1120,11 @@ function TenantProfileForm({ profile, setProfile, serviceTypes, onSave, onUpload
       </View>
       <SectorPackSelector sectorPacks={serviceTypes} value={profile.service_type_id ?? ""} onChange={(service_type_id) => update({ service_type_id })} />
       <Text style={styles.fieldHelp}>El frontend público solo mostrará los servicios pertenecientes a este tipo de servicio.</Text>
+      <Text style={styles.sectionLabel}>Cobertura geográfica</Text>
+      <View style={styles.formGrid}>
+        <Field label="Ciudad de referencia" hint="Punto de partida desde el que se calcula la distancia hasta la ubicación indicada por el cliente." value={profile.city ?? ""} onChangeText={(city) => update({ city })} />
+        <Field label="Radio de acción (km)" hint="Distancia máxima que quieres atender desde la ciudad de referencia. Por ejemplo, 100 km." value={String(profile.service_radius_km ?? 100)} keyboardType="decimal-pad" onChangeText={(value) => update({ service_radius_km: Number(value.replace(",", ".")) || 0 })} />
+      </View>
       <View style={styles.formGrid}>
         <Field label="NIF/CIF" value={profile.tax_id ?? ""} onChangeText={(tax_id) => update({ tax_id })} />
         <Field label="Teléfono" value={profile.contact_phone ?? ""} onChangeText={(contact_phone) => update({ contact_phone })} />
@@ -1138,10 +1143,8 @@ function TenantProfileForm({ profile, setProfile, serviceTypes, onSave, onUpload
       <Field label="Dirección" value={profile.address_line1 ?? ""} onChangeText={(address_line1) => update({ address_line1 })} />
       <View style={styles.formGrid}>
         <Field label="Código postal" value={profile.postal_code ?? ""} onChangeText={(postal_code) => update({ postal_code })} />
-        <Field label="Ciudad de referencia" hint="Punto de partida desde el que se calcula la distancia hasta la ubicación indicada por el cliente." value={profile.city ?? ""} onChangeText={(city) => update({ city })} />
         <Field label="Provincia/Región" value={profile.region ?? ""} onChangeText={(region) => update({ region })} />
       </View>
-      <Field label="Radio de acción (km)" hint="Distancia máxima que quieres atender desde la ciudad de referencia. Por ejemplo, 100 km." value={String(profile.service_radius_km ?? 100)} keyboardType="decimal-pad" onChangeText={(value) => update({ service_radius_km: Number(value.replace(",", ".")) || 0 })} />
       <Text style={styles.sectionLabel}>Documento comercial</Text>
       <Text style={styles.fieldLabel}>Modelo que generará el presupuesto</Text>
       <View style={styles.documentChoices}>
@@ -1491,7 +1494,7 @@ function ServiceModal({ visible, services, sectorPacks, onClose, onCreate, savin
 
 function SectorPackSelector({ sectorPacks, value, onChange }: { sectorPacks: SectorPack[]; value: string; onChange: (value: string) => void }) {
   const options: ReferenceOption[] = sectorPacks.map((pack) => ({ value: pack.id, label: pack.name }));
-  return <ReferenceSelector label="Tipo de servicio" hint="Categoría superior a la que pertenece este servicio. Puedes crear nuevas categorías desde el Diseñador de servicios." value={value} options={options} onChange={onChange} />;
+  return <ReferenceSelector label="Tipo de servicio" hint="Categoría superior a la que pertenece este servicio. Puedes crear nuevas categorías desde el Diseñador de servicios." value={value} options={options} onChange={onChange} showValue={false} />;
 }
 
 function SectorPackModal({ visible, onClose, onCreate, saving }: { visible: boolean; onClose: () => void; onCreate: (pack: NewSectorPack) => Promise<boolean>; saving: boolean }) {
@@ -2046,10 +2049,21 @@ function UnitSelector({ value, onChange }: { value: string; onChange: (value: st
 type ReferenceOption = { value: string; label: string };
 type DesignerSection = "fields" | "items" | "rules" | "measures";
 
-function ReferenceSelector({ label, hint, value, options, onChange }: { label: string; hint: string; value: string; options: ReferenceOption[]; onChange: (value: string) => void }) {
+function ReferenceSelector({ label, hint, value, options, onChange, showValue = true }: { label: string; hint: string; value: string; options: ReferenceOption[]; onChange: (value: string) => void; showValue?: boolean }) {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<any>(null);
   const selected = options.find((option) => option.value === value);
-  return <View style={[styles.field, open && styles.referenceFieldOpen]}><InfoLabel label={label} hint={hint} /><Pressable style={[styles.typeSelector, !options.length && styles.readonlyInput]} onPress={() => { if (options.length) setOpen(!open); }} disabled={!options.length}><Text style={[styles.typeSelectorLabel, !selected && styles.selectorPlaceholder]}>{selected ? (selected.value ? `${selected.value} — ${selected.label}` : selected.label) : options.length ? "Seleccionar una referencia" : "No hay opciones creadas"}</Text><Text style={styles.typeSelectorHint}>{options.length ? (open ? "Cerrar" : "Seleccionar") : ""}</Text></Pressable>{open ? <View style={styles.referenceMenu}>{options.map((option) => <Pressable key={option.value || "__empty__"} style={styles.referenceOption} onPress={() => { onChange(option.value); setOpen(false); }}><Text style={styles.referenceOptionCode}>{option.value || "—"}</Text><Text style={styles.referenceOptionLabel}>{option.label}</Text></Pressable>)}</View> : null}</View>;
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !containerRef.current?.contains?.(target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [open]);
+  const selectedLabel = selected ? (showValue && selected.value ? `${selected.value} — ${selected.label}` : selected.label) : options.length ? "Seleccionar una referencia" : "No hay opciones creadas";
+  return <View ref={containerRef} style={[styles.field, open && styles.referenceFieldOpen]}><InfoLabel label={label} hint={hint} /><Pressable style={[styles.typeSelector, !options.length && styles.readonlyInput]} onPress={() => { if (options.length) setOpen(!open); }} disabled={!options.length}><Text style={[styles.typeSelectorLabel, !selected && styles.selectorPlaceholder]}>{selectedLabel}</Text><Text style={styles.typeSelectorHint}>{options.length ? (open ? "Cerrar" : "Seleccionar") : ""}</Text></Pressable>{open ? <View style={styles.referenceMenu}>{options.map((option) => <Pressable key={option.value || "__empty__"} style={styles.referenceOption} onPress={() => { onChange(option.value); setOpen(false); }}>{showValue ? <Text style={styles.referenceOptionCode}>{option.value || "—"}</Text> : null}<Text style={styles.referenceOptionLabel}>{option.label}</Text></Pressable>)}</View> : null}</View>;
 }
 
 function DependentOptionsEditor({ field, candidates, onChange }: { field: BlueprintField; candidates: BlueprintField[]; onChange: (depends_on?: DependentOptions) => void }) {
