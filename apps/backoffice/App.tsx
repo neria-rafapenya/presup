@@ -1118,7 +1118,7 @@ function TenantProfileForm({ profile, setProfile, serviceTypes, onSave, onUpload
         <Field label="Nombre comercial" value={profile.display_name ?? ""} onChangeText={(display_name) => update({ display_name })} />
         <Field label="Razón social" value={profile.legal_name ?? ""} onChangeText={(legal_name) => update({ legal_name })} />
       </View>
-      <SectorPackSelector sectorPacks={serviceTypes} value={profile.service_type_id ?? ""} onChange={(service_type_id) => update({ service_type_id })} />
+      <SectorPackSelector sectorPacks={serviceTypes} value={profile.service_type_id ?? ""} onChange={(service_type_id) => update({ service_type_id })} label="Negocio" hint="" />
       <Text style={styles.fieldHelp}>El frontend público solo mostrará los servicios pertenecientes a este tipo de servicio.</Text>
       <Text style={styles.sectionLabel}>Cobertura geográfica</Text>
       <View style={styles.formGrid}>
@@ -1492,9 +1492,9 @@ function ServiceModal({ visible, services, sectorPacks, onClose, onCreate, savin
   );
 }
 
-function SectorPackSelector({ sectorPacks, value, onChange }: { sectorPacks: SectorPack[]; value: string; onChange: (value: string) => void }) {
+function SectorPackSelector({ sectorPacks, value, onChange, label = "Tipo de servicio", hint = "Categoría superior a la que pertenece este servicio. Puedes crear nuevas categorías desde el Diseñador de servicios." }: { sectorPacks: SectorPack[]; value: string; onChange: (value: string) => void; label?: string; hint?: string }) {
   const options: ReferenceOption[] = sectorPacks.map((pack) => ({ value: pack.id, label: pack.name }));
-  return <ReferenceSelector label="Tipo de servicio" hint="Categoría superior a la que pertenece este servicio. Puedes crear nuevas categorías desde el Diseñador de servicios." value={value} options={options} onChange={onChange} showValue={false} />;
+  return <ReferenceSelector label={label} hint={hint} value={value} options={options} onChange={onChange} showValue={false} />;
 }
 
 function SectorPackModal({ visible, onClose, onCreate, saving }: { visible: boolean; onClose: () => void; onCreate: (pack: NewSectorPack) => Promise<boolean>; saving: boolean }) {
