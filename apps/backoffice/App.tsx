@@ -44,6 +44,7 @@ type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
   service_type_id: string | null;
+  service_radius_km: number;
   tax_id: string | null;
   contact_name: string | null;
   contact_role: string | null;
@@ -1129,9 +1130,10 @@ function TenantProfileForm({ profile, setProfile, serviceTypes, onSave, onUpload
       <Field label="Dirección" value={profile.address_line1 ?? ""} onChangeText={(address_line1) => update({ address_line1 })} />
       <View style={styles.formGrid}>
         <Field label="Código postal" value={profile.postal_code ?? ""} onChangeText={(postal_code) => update({ postal_code })} />
-        <Field label="Ciudad" value={profile.city ?? ""} onChangeText={(city) => update({ city })} />
+        <Field label="Ciudad de referencia" hint="Punto de partida desde el que se calcula la distancia hasta la ubicación indicada por el cliente." value={profile.city ?? ""} onChangeText={(city) => update({ city })} />
         <Field label="Provincia/Región" value={profile.region ?? ""} onChangeText={(region) => update({ region })} />
       </View>
+      <Field label="Radio de acción (km)" hint="Distancia máxima que quieres atender desde la ciudad de referencia. Por ejemplo, 100 km." value={String(profile.service_radius_km ?? 100)} keyboardType="decimal-pad" onChangeText={(value) => update({ service_radius_km: Number(value.replace(",", ".")) || 0 })} />
       <Text style={styles.sectionLabel}>Documento comercial</Text>
       <Text style={styles.fieldLabel}>Modelo que generará el presupuesto</Text>
       <View style={styles.documentChoices}>

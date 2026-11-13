@@ -38,6 +38,7 @@ class ProfilePatch(BaseModel):
     legal_name: str | None = Field(default=None, max_length=240)
     display_name: str | None = Field(default=None, max_length=240)
     service_type_id: UUID | None = None
+    service_radius_km: Decimal = Field(default=Decimal("100"), gt=0, le=1000)
     tax_id: str | None = Field(default=None, max_length=80)
     contact_name: str | None = Field(default=None, max_length=160)
     contact_role: str | None = Field(default=None, max_length=160)
@@ -259,7 +260,7 @@ def profile(settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # no
             )
             row = conn.execute(
                 """
-                select legal_name, display_name, service_type_id, tax_id, contact_name, contact_role,
+                select legal_name, display_name, service_type_id, service_radius_km, tax_id, contact_name, contact_role,
                        contact_email, contact_phone, billing_email, quotes_email,
                        address_line1, address_line2, postal_code, city, region, country,
                        quote_document_type, quote_template_document_id is not null as quote_template_available,
@@ -287,7 +288,7 @@ def update_profile(payload: ProfilePatch, settings: Settings = Depends(get_setti
             row = conn.execute(
                 """
                 update public.horekia_tenant_profiles
-                set legal_name = %s, display_name = %s, service_type_id = %s, tax_id = %s,
+                set legal_name = %s, display_name = %s, service_type_id = %s, service_radius_km = %s, tax_id = %s,
                     contact_name = %s, contact_role = %s, contact_email = %s,
                     contact_phone = %s, billing_email = %s, quotes_email = %s,
                     address_line1 = %s, address_line2 = %s, postal_code = %s,
@@ -295,14 +296,14 @@ def update_profile(payload: ProfilePatch, settings: Settings = Depends(get_setti
                     quote_document_type = %s, disclaimers = %s, warranty_terms = %s,
                     updated_at = now()
                 where tenant_id = %s
-                returning legal_name, display_name, service_type_id, tax_id, contact_name, contact_role,
+                returning legal_name, display_name, service_type_id, service_radius_km, tax_id, contact_name, contact_role,
                           contact_email, contact_phone, billing_email, quotes_email,
                           address_line1, address_line2, postal_code, city, region, country,
                           quote_document_type, quote_template_document_id is not null as quote_template_available,
                           disclaimers, warranty_terms, metadata
                 """,
                 (
-                    payload.legal_name, payload.display_name, payload.service_type_id, payload.tax_id,
+                    payload.legal_name, payload.display_name, payload.service_type_id, payload.service_radius_km, payload.tax_id,
                     payload.contact_name, payload.contact_role, payload.contact_email,
                     payload.contact_phone, payload.billing_email, payload.quotes_email,
                     payload.address_line1, payload.address_line2, payload.postal_code,

@@ -719,13 +719,14 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake), "intake_data": intake}
             if field.get("key") == COVERAGE_FIELD_KEY:
-                profile = conn.execute("select city, display_name from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
+                profile = conn.execute("select city, service_radius_km, display_name from public.horekia_tenant_profiles where tenant_id = %s", (tenant_id,)).fetchone()
                 requested_location = str(value)
-                coverage = check_service_coverage(profile["city"] if profile else None, requested_location)
+                radius_km = profile["service_radius_km"] if profile else None
+                coverage = check_service_coverage(profile["city"] if profile else None, requested_location, radius_km)
                 if coverage.get("reason") == "location_not_found":
                     normalized_location = _normalize_location_with_gemini(requested_location, settings)
                     if normalized_location:
-                        normalized_coverage = check_service_coverage(profile["city"] if profile else None, normalized_location)
+                        normalized_coverage = check_service_coverage(profile["city"] if profile else None, normalized_location, radius_km)
                         if normalized_coverage["status"] != "unavailable":
                             normalized_coverage["destination_input"] = requested_location
                             normalized_coverage["destination_normalized"] = normalized_location
@@ -741,12 +742,12 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 if coverage["status"] == "outside_radius":
                     intake[field["key"]] = value
                     distance = f"{coverage['distance_km']:.1f}".replace(".", ",")
-                    radius = f"{coverage['radius_km']:.0f}"
+                    radius = f"{float(coverage['radius_km']):.1f}".rstrip("0").rstrip(".").replace(".", ",")
                     business_name = (profile["display_name"] if profile else None) or "la empresa"
                     contact_name = f"**{business_name}**" if business_name != "la empresa" else business_name
                     reply = (
                         f"Lo siento, en esta ocasión no podemos preparar el presupuesto porque la ubicación está a **{distance} km** "
-                        f"de nuestra ciudad y nuestro radio habitual de actuación es de **{radius} km**.\n\n"
+                        f"de nuestra ciudad y nuestro radio de acción es de **{radius} km**.\n\n"
                         f"Si necesitas realizar la reforma en esa dirección, puedes contactar directamente con {contact_name} "
                         "para consultar si es posible valorar una excepción."
                     )

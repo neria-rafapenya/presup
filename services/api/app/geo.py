@@ -5,14 +5,14 @@ import re
 import unicodedata
 
 EARTH_RADIUS_KM = 6371.0
-SERVICE_RADIUS_KM = 100.0
+DEFAULT_SERVICE_RADIUS_KM = 100.0
 COVERAGE_FIELD_KEY = "ubicacion_servicio"
 COVERAGE_FIELD = {
     "key": COVERAGE_FIELD_KEY,
     "label": "Para saber si nuestro ámbito de actuación es viable, ¿dónde deberíamos prestar el servicio?",
     "type": "text",
     "required": True,
-    "help_text": "Indica la ciudad o el código postal de la vivienda. Se comprobará si está a menos de 100 km de la ciudad configurada por la empresa.",
+    "help_text": "Indica la ciudad o el código postal de la vivienda. Se comprobará si está dentro del radio de acción configurado por la empresa.",
     "example": "Torredembarra",
     "options": [],
 }
@@ -118,18 +118,19 @@ def distance_km(origin: tuple[float, float], destination: tuple[float, float]) -
     return 2 * EARTH_RADIUS_KM * asin(sqrt(value))
 
 
-def check_service_coverage(origin_city: str | None, destination: str) -> dict[str, object]:
+def check_service_coverage(origin_city: str | None, destination: str, radius_km: float | None = None) -> dict[str, object]:
     origin = coordinates_for_location(origin_city or "")
     target = coordinates_for_location(destination)
+    effective_radius = float(radius_km or DEFAULT_SERVICE_RADIUS_KM)
     if not origin:
         return {"status": "unavailable", "reason": "origin_not_configured"}
     if not target:
         return {"status": "unavailable", "reason": "location_not_found"}
     distance = round(distance_km(origin, target), 1)
     return {
-        "status": "within_radius" if distance <= SERVICE_RADIUS_KM else "outside_radius",
+        "status": "within_radius" if distance <= effective_radius else "outside_radius",
         "distance_km": distance,
-        "radius_km": SERVICE_RADIUS_KM,
+        "radius_km": effective_radius,
         "origin": origin_city,
         "destination": destination,
     }

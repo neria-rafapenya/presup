@@ -13,6 +13,9 @@ Conceptos principales:
 - El Wizard es la herramienta de onboarding. Sus pasos son Empresa, Oferta y servicios,
   Conocimiento y Revisión.
 - Empresa contiene los datos comerciales del tenant y la configuración operativa.
+- En Empresa, Ciudad de referencia es el punto de partida para comprobar la cobertura y
+  Radio de acción (km) define la distancia máxima que se quiere atender. Las instalaciones
+  existentes parten de 100 km y el tenant puede cambiar ese valor.
 - Servicios y fichas es el grupo del menú. El Diseñador de servicios permite editar un
   servicio por su identificador y contiene Preguntas, Catálogo, Reglas y Medidas.
 - Base de conocimiento contiene contexto del negocio para Gemini: productos, categorías,
@@ -73,6 +76,10 @@ Regla de cálculo:
 
 Cómo resolver dudas:
 - Para crear un servicio: ir al Wizard, paso Oferta y servicios.
+- Para configurar la cobertura: abrir Empresa, completar Ciudad de referencia y Radio de
+  acción (km), y pulsar Guardar datos de empresa. La ubicación se comprueba antes de las
+  demás preguntas del presupuesto con un cálculo determinista; Gemini solo ayuda a
+  normalizar una ciudad o código postal que no se reconoce localmente.
 - Para editar preguntas, catálogo o reglas: abrir Diseñador de servicios y pulsar Diseñar.
 - Para cargar datos generales: abrir Servicios y fichas, Base de conocimiento.
 - Para consultar ejemplos: abrir el menú Documentación.
