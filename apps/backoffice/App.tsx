@@ -167,6 +167,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [helpOpenRequest, setHelpOpenRequest] = useState(0);
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -545,7 +546,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -581,7 +582,7 @@ export default function App() {
           ) : null}
         </ScrollView>
       )}
-      {screen !== "designer" ? <DocumentationHelpChat onSend={askDocumentation} onOpenDocumentation={() => navigate("documentation")} /> : null}
+      <DocumentationHelpChat openRequest={helpOpenRequest} onSend={askDocumentation} onOpenDocumentation={() => navigate("documentation")} />
     </View>
   );
 }
@@ -590,11 +591,15 @@ function NavButton({ label, active, onPress, child = false }: { label: string; a
   return <Pressable style={[styles.navButton, child && styles.navButtonChild, active && styles.navButtonActive]} onPress={onPress}><Text style={[styles.navLabel, child && styles.navLabelChild, active && styles.navLabelActive]}>{label}</Text></Pressable>;
 }
 
-function DocumentationHelpChat({ onSend, onOpenDocumentation }: { onSend: (messages: HelpMessage[]) => Promise<string>; onOpenDocumentation: () => void }) {
+function DocumentationHelpChat({ openRequest = 0, onSend, onOpenDocumentation }: { openRequest?: number; onSend: (messages: HelpMessage[]) => Promise<string>; onOpenDocumentation: () => void }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<HelpMessage[]>([{ role: "assistant", content: "Hola. Puedo ayudarte con la configuración del backoffice, los servicios y los CSV." }]);
+
+  useEffect(() => {
+    if (openRequest > 0) setOpen(true);
+  }, [openRequest]);
 
   const submit = async () => {
     const content = draft.trim();
@@ -1320,7 +1325,7 @@ function ServiceModal({ visible, services, onClose, onCreate, saving }: { visibl
   );
 }
 
-function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; onClose: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
+function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; onClose: () => void; onOpenHelp: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
   const [draft, setDraft] = useState<ServiceBlueprint>(emptyBlueprint());
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
@@ -1561,7 +1566,7 @@ function ServiceDesignerModal({ visible, service, onClose, onLoad, onSave, savin
             {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
             {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}</View>
           </ScrollView>
-          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={requestClose}><Text style={styles.secondaryLabel}>Cerrar</Text></Pressable></View>
+          <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onOpenHelp} accessibilityRole="button" accessibilityLabel="Abrir ayuda del backoffice"><Text style={styles.secondaryLabel}>Ayuda del backoffice</Text></Pressable></View>
           {designerLoading ? <View style={styles.designerLoadingOverlay}><ActivityIndicator size="large" color="#258269" /><Text style={styles.designerLoadingText}>Cargando diseño…</Text></View> : null}
           {discardConfirmOpen ? <View style={styles.discardOverlay}><View style={styles.discardCard}><Text style={styles.panelTitle}>Cambios sin guardar</Text><Text style={styles.wizardText}>Has creado o modificado este patrón. Si cierras ahora, perderás los cambios.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={() => setDiscardConfirmOpen(false)}><Text style={styles.secondaryLabel}>Seguir editando</Text></Pressable><Pressable style={styles.dangerButton} onPress={discardAndClose}><Text style={styles.primaryLabel}>Salir sin guardar</Text></Pressable></View></View></View> : null}
         </View>
