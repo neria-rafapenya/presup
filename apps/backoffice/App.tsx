@@ -41,6 +41,7 @@ type HelpMessage = { role: "user" | "assistant"; content: string };
 type RequestSummary = { id: string; status: string; source: string; intake_data: Record<string, unknown>; missing_fields: string[]; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null; customer_email?: string | null; quote_id?: string | null; quote_status?: string | null; quote_total?: number | string | null; quote_currency?: string | null };
 type QuoteSummary = { id: string; request_id?: string | null; status: string; currency: string; subtotal: number | string; tax_amount: number | string; total: number | string; valid_until?: string | null; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null };
 type VisibilityCondition = { field: string; equals: string };
+type DesignerDragSection = "field" | "item" | "rule";
 type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
@@ -1536,6 +1537,8 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   const [designerLoading, setDesignerLoading] = useState(false);
   const [designerSection, setDesignerSection] = useState<DesignerSection>("fields");
   const [designerSearch, setDesignerSearch] = useState("");
+  const [draggedBlock, setDraggedBlock] = useState<{ section: DesignerDragSection; index: number } | null>(null);
+  const [dragOverBlock, setDragOverBlock] = useState<{ section: DesignerDragSection; index: number } | null>(null);
   const originalBlueprintRef = useRef<ServiceBlueprint>(emptyBlueprint());
   const [scrollTarget, setScrollTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
   const [highlightTarget, setHighlightTarget] = useState<{ section: "field" | "item" | "rule"; index: number } | null>(null);
@@ -1631,6 +1634,44 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   const addField = (type = "text", label = "Nueva pregunta") => { markDesignerDirty(); if (fullScreen) selectDesignerSection("fields"); const index = draft.fields.length; const key = internalKey(label, draft.fields.map((field) => field.key)); const editorId = createFieldEditorId(); fieldEditorIds.current = [...fieldEditorIds.current, editorId]; setExpandedBlockKey(`field-${editorId}`); setDraft({ ...draft, fields: [...draft.fields, { key, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
   const removeField = (index: number) => { markDesignerDirty(); fieldEditorIds.current = fieldEditorIds.current.filter((_, fieldIndex) => fieldIndex !== index); setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) }); };
   const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; markDesignerDirty(); const fields = [...draft.fields]; const editorIds = [...fieldEditorIds.current]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; [editorIds[index], editorIds[nextIndex]] = [editorIds[nextIndex], editorIds[index]]; fieldEditorIds.current = editorIds; const nextDraft = { ...draft, fields }; setDraft(nextDraft); void save("reorder", nextDraft); };
+  const startDrag = (section: DesignerDragSection, index: number) => { setDraggedBlock({ section, index }); setDragOverBlock({ section, index }); };
+  const endDrag = () => { setDraggedBlock(null); setDragOverBlock(null); };
+  const dropDraggedBlock = (section: DesignerDragSection, targetIndex: number) => {
+    if (!draggedBlock || draggedBlock.section !== section) return endDrag();
+    const sourceIndex = draggedBlock.index;
+    if (sourceIndex === targetIndex) return endDrag();
+    markDesignerDirty();
+    if (section === "field") {
+      const fields = [...draft.fields];
+      const editorIds = [...fieldEditorIds.current];
+      const [field] = fields.splice(sourceIndex, 1);
+      const [editorId] = editorIds.splice(sourceIndex, 1);
+      fields.splice(targetIndex, 0, field);
+      editorIds.splice(targetIndex, 0, editorId);
+      fieldEditorIds.current = editorIds;
+      const nextDraft = { ...draft, fields };
+      setDraft(nextDraft);
+      endDrag();
+      void save("reorder", nextDraft);
+      return;
+    }
+    if (section === "item") {
+      const items = [...draft.items];
+      const [item] = items.splice(sourceIndex, 1);
+      items.splice(targetIndex, 0, item);
+      const nextDraft = { ...draft, items };
+      setDraft(nextDraft);
+      endDrag();
+      void save("reorder", nextDraft);
+      return;
+    }
+    const nextRules = [...ruleCards];
+    const [rule] = nextRules.splice(sourceIndex, 1);
+    nextRules.splice(targetIndex, 0, rule);
+    setRuleCards(nextRules);
+    endDrag();
+    void save("reorder", draft, nextRules);
+  };
   const loadTemplate = (template: ServiceTemplate) => { markDesignerDirty(); const blueprint = blueprintFor(template); resetFieldEditorIds(blueprint.fields); setDraftFromTemplate(template, setDraft, setRuleCards, setMeasuresText); };
   const resetToOriginal = () => { markDesignerDirty(); const blueprint = cloneBlueprint(originalBlueprintRef.current); resetFieldEditorIds(blueprint.fields); setDraft(blueprint); setRuleCards(toEditableRules(blueprint.rules)); setMeasuresText(JSON.stringify(blueprint.measures, null, 2)); setExpandedBlockKey(null); setDesignerSection("fields"); setDesignerSearch(""); };
   const addItem = (category = "producto") => { markDesignerDirty(); if (fullScreen) selectDesignerSection("items"); const index = draft.items.length; setExpandedBlockKey(`item-${index}`); setDraft({ ...draft, items: [...draft.items, { sku: `item_${index + 1}`, name: `Nuevo ${category}`, unit: "m²", currency: "EUR", metadata: { category } }] }); setScrollTarget({ section: "item", index }); highlightNewBlock("item", index); };
@@ -1645,13 +1686,13 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   };
   const addRule = (kind: BlueprintRule["kind"]) => { markDesignerDirty(); if (fullScreen) selectDesignerSection("rules"); const index = ruleCards.length; setExpandedBlockKey(`rule-${index}`); setRuleCards([...ruleCards, editableRule({ code: "", kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); highlightNewBlock("rule", index); };
   const removeRule = (index: number) => { markDesignerDirty(); setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index)); };
-  const save = async (blockKey?: string, draftOverride?: ServiceBlueprint) => {
+  const save = async (blockKey?: string, draftOverride?: ServiceBlueprint, ruleCardsOverride?: EditableRule[]) => {
     if (saveInFlightRef.current) return;
     saveInFlightRef.current = true;
     const workingDraft = draftOverride ?? draft;
     setSavingBlockKey(blockKey ?? null);
     try {
-      const rules = ruleCards.map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
+      const rules = (ruleCardsOverride ?? ruleCards).map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
       const measures = JSON.parse(measuresText) as Array<{ code: string; expression: Record<string, unknown> }>;
       if (!Array.isArray(rules) || !Array.isArray(measures)) throw new Error("Las reglas deben ser listas JSON");
       const fieldCodes = new Set(workingDraft.fields.map((field) => field.key));
@@ -1739,6 +1780,17 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
 
   const selectDesignerSection = (section: DesignerSection) => { setDesignerSection(section); setDesignerSearch(""); };
   const matchesDesignerSearch = (value: string) => !fullScreen || !designerSearch.trim() || value.toLocaleLowerCase().includes(designerSearch.trim().toLocaleLowerCase());
+  const dragCardProps = (section: DesignerDragSection, index: number): Record<string, unknown> => Platform.OS !== "web" ? {} : {
+    onDragOver: (event: any) => {
+      event.preventDefault();
+      if (draggedBlock?.section === section) setDragOverBlock({ section, index });
+    },
+    onDrop: (event: any) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dropDraggedBlock(section, index);
+    },
+  };
 
   const designerPanel = (
         <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
@@ -1749,10 +1801,10 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
               <TemplateSelector onSelect={loadTemplate} onReset={resetToOriginal} />
             </View>
             <View style={fullScreen && designerSection !== "fields" ? styles.hidden : null}><View style={styles.sectionHeaderRow}><Text style={styles.sectionLabel}>Preguntas y variables</Text>{savingBlockKey === "reorder" ? <Text style={styles.listMeta}>Guardando orden…</Text> : null}</View>
-            <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
+            <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Usa el icono de puntos para arrastrar y reordenar; las flechas siguen disponibles como alternativa.</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar preguntas por nombre o código…" /> : null}
             <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.fields.map((field, index) => <Animated.View onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${field.label} ${field.key}`) ? styles.hidden : null]} key={fieldEditorIds.current[index] ?? `field-editor-fallback-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}` ? "▲" : "▼"}</Text><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text></Pressable><Pressable onPress={() => moveField(index, -1)} disabled={saving}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)} disabled={saving}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`field-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `field-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeField(index)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`}><View style={styles.designerRow}><Field label="Código interno" hint="Se genera automáticamente a partir del nombre de la pregunta y lo utiliza el motor de reglas. No necesitas escribirlo." value={field.key} onChangeText={() => undefined} editable={false} /><Field label="Pregunta para el cliente" hint="Es la pregunta que verá la persona en el chatbot. Escríbela como se la dirías directamente." value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type, ...(type !== "choice" ? { depends_on: undefined } : {}) })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: gres, porcelánico, microcemento." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />}{field.type === "number" ? <UnitSelector value={field.unit || "m²"} onChange={(unit) => updateField(index, { unit })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>{field.type === "choice" ? <DependentOptionsEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(depends_on) => updateField(index, { depends_on })} /> : null}<VisibleWhenEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(visible_when) => updateField(index, { visible_when })} /><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</AnimatedCollapse></Animated.View>)}
+            {draft.fields.map((field, index) => <Animated.View {...dragCardProps("field", index)} onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, dragOverBlock?.section === "field" && dragOverBlock.index === index ? styles.dragOverCard : null, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${field.label} ${field.key}`) ? styles.hidden : null]} key={fieldEditorIds.current[index] ?? `field-editor-fallback-${index}`}><View style={styles.blockHeader}><DragHandle label="Arrastrar para reordenar esta pregunta" onDragStart={() => startDrag("field", index)} onDragEnd={endDrag} /><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}` ? "▲" : "▼"}</Text><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text></Pressable><Pressable onPress={() => moveField(index, -1)} disabled={saving}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)} disabled={saving}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`field-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `field-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeField(index)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`}><View style={styles.designerRow}><Field label="Código interno" hint="Se genera automáticamente a partir del nombre de la pregunta y lo utiliza el motor de reglas. No necesitas escribirlo." value={field.key} onChangeText={() => undefined} editable={false} /><Field label="Pregunta para el cliente" hint="Es la pregunta que verá la persona en el chatbot. Escríbela como se la dirías directamente." value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type, ...(type !== "choice" ? { depends_on: undefined } : {}) })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: gres, porcelánico, microcemento." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />}{field.type === "number" ? <UnitSelector value={field.unit || "m²"} onChange={(unit) => updateField(index, { unit })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>{field.type === "choice" ? <DependentOptionsEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(depends_on) => updateField(index, { depends_on })} /> : null}<VisibleWhenEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(visible_when) => updateField(index, { visible_when })} /><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</AnimatedCollapse></Animated.View>)}
             </View><View style={fullScreen && designerSection !== "items" ? styles.hidden : null}><Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar conceptos por nombre o código…" /> : null}
             <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
@@ -1774,6 +1826,22 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
         </View>
   );
   return fullScreen ? <View style={styles.designerScreen}>{designerPanel}</View> : <Modal visible={visible} transparent animationType="fade" onRequestClose={requestClose}><View style={styles.modalBackdrop}>{designerPanel}</View></Modal>;
+}
+
+function DragHandle({ label, onDragStart, onDragEnd }: { label: string; onDragStart: () => void; onDragEnd: () => void }) {
+  if (Platform.OS !== "web") {
+    return <View style={styles.dragHandle}><Text style={styles.dragHandleLabel}>⠿</Text></View>;
+  }
+  return createElement("span", {
+    draggable: true,
+    role: "button",
+    title: label,
+    "aria-label": label,
+    onClick: (event: any) => event.stopPropagation(),
+    onDragStart: (event: any) => { event.stopPropagation(); onDragStart(); },
+    onDragEnd: (event: any) => { event.stopPropagation(); onDragEnd(); },
+    style: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 28, color: "#285246", fontSize: 19, fontWeight: 900, cursor: "grab", userSelect: "none", flexShrink: 0 },
+  }, "⠿");
 }
 
 function emptyBlueprint(): ServiceBlueprint {
@@ -2323,7 +2391,10 @@ const styles = StyleSheet.create({
   paletteButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "#f7fbf8" },
   paletteLabel: { color: "#285246", fontSize: 12, fontWeight: "900" },
   blockCard: { borderWidth: 1, borderColor: "#dbe6df", borderRadius: 10, padding: 10, marginTop: 6, backgroundColor: "#fbfdfb" },
+  dragOverCard: { borderColor: "#258269", borderWidth: 2, backgroundColor: "#f0f8f2" },
   blockHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
+  dragHandle: { width: 24, height: 28, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  dragHandleLabel: { color: "#285246", fontSize: 19, fontWeight: "900" },
   blockIndex: { color: "#258269", fontSize: 12, fontWeight: "900", width: 22 },
   blockTitle: { color: "#17332d", fontSize: 15, fontWeight: "900", flex: 1 },
   blockToggle: { flexDirection: "row", alignItems: "center", flex: 1, minWidth: 0 },
