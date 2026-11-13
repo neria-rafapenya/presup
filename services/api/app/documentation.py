@@ -34,7 +34,7 @@ CSV de patrón de servicio:
 - Se importa desde Base de conocimiento con el bloque Importar patrón de servicio.
 - Columnas: service_slug, record_type, order, code, title, content, type, options, required,
   unit, min, max, example, base_price, currency, priority, rule_kind, definition,
-  expression, metadata y depends_on.
+  expression, metadata, depends_on y visible_when.
 - record_type puede ser service, field, item, rule o measure.
 - service crea el servicio si no existe y title contiene su nombre.
 - La fila service puede incluir metadata como {"sector_pack":"imprenta"} para asignar el
@@ -66,6 +66,10 @@ CSV de patrón de servicio:
 - La columna options del field dependiente debe contener la unión de todas las opciones.
   El backend entrega al chat solo las opciones correspondientes a la respuesta anterior y
   rechaza una opción incompatible escrita manualmente.
+- visible_when permite mostrar y preguntar un field solo cuando se cumple una condición.
+  Ejemplo: {"field":"format_type","equals":"Personalizado"} hace que custom_dimensions
+  solo aparezca después de elegir Personalizado. La pregunta debe ser obligatoria si se
+  necesita para completar el presupuesto.
 - Las reglas kind formula, unit_price, surcharge, factor y minimum siguen siendo necesarias
   aparte cuando la combinación válida debe cambiar el precio o añadir una línea de catálogo.
 

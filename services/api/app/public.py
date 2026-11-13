@@ -157,6 +157,22 @@ def _effective_field(field: dict[str, Any], intake: dict[str, Any] | None = None
     return effective
 
 
+def _field_is_visible(field: dict[str, Any], intake: dict[str, Any] | None = None) -> bool:
+    condition = field.get("visible_when")
+    if not condition:
+        return True
+    if not isinstance(condition, dict):
+        return True
+    controller_key = condition.get("field")
+    expected_value = condition.get("equals")
+    if not isinstance(controller_key, str) or not isinstance(expected_value, str) or not expected_value.strip():
+        return False
+    actual_value = (intake or {}).get(controller_key)
+    if actual_value in (None, ""):
+        return False
+    return str(actual_value).casefold() == expected_value.casefold()
+
+
 def _field_question(field: dict[str, Any], prompt_index: int = 0, intake: dict[str, Any] | None = None) -> str:
     field = _effective_field(field, intake)
     label = field["label"].lower()
@@ -254,6 +270,8 @@ def _friendly_retry(field: dict[str, Any], intake: dict[str, Any] | None = None)
 
 def _public_field(field: dict[str, Any] | None, intake: dict[str, Any] | None = None) -> dict[str, Any] | None:
     if not field:
+        return None
+    if not _field_is_visible(field, intake):
         return None
     field = _effective_field(field, intake)
     return {
@@ -374,7 +392,7 @@ def _ask_gemini_public(
 
 
 def _next_missing(fields: list[dict[str, Any]], intake: dict[str, Any]) -> dict[str, Any] | None:
-    return next((field for field in fields if field.get("required") and field["key"] not in intake), None)
+    return next((field for field in fields if field.get("required") and field["key"] not in intake and _field_is_visible(field, intake)), None)
 
 
 def _coerce_field(field: dict[str, Any], content: str, intake: dict[str, Any] | None = None) -> Any | None:
@@ -705,6 +723,8 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         intake = dict(request["intake_data"] or {})
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body) values (%s, %s, 'customer', %s)", (tenant_id, request_id, payload.content))
         field = next((item for item in fields if item.get("key") == payload.field_key), None) if payload.field_key else _next_missing(fields, intake)
+        if field and not _field_is_visible(field, intake):
+            field = _next_missing(fields, intake)
         coverage = None
         if field:
             value = _coerce_field(field, payload.content, intake)
@@ -756,7 +776,7 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     return {"request_id": str(request_id), "status": "closed", "reply": reply, "field": None, "intake_data": intake, "coverage": coverage, "eligible": False}
             intake[field["key"]] = value
         next_field = _next_missing(fields, intake)
-        missing = [item["key"] for item in fields if item.get("required") and item["key"] not in intake]
+        missing = [item["key"] for item in fields if item.get("required") and item["key"] not in intake and _field_is_visible(item, intake)]
         if next_field:
             numeric_prompt_index = sum(
                 1 for item in blueprint["fields"] if item.get("type") == "number" and item.get("key") in intake

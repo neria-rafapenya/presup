@@ -86,6 +86,7 @@ class BlueprintField(BaseModel):
     help_text: str | None = Field(default=None, max_length=500)
     example: str | None = Field(default=None, max_length=500)
     depends_on: dict[str, Any] | None = None
+    visible_when: dict[str, Any] | None = None
 
 
 class BlueprintItem(BaseModel):
@@ -623,6 +624,38 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
             ).fetchone()
             if service is None:
                 raise HTTPException(status_code=404, detail="Servicio no encontrado")
+
+            # Reordering saves the whole blueprint. Serialize concurrent saves for
+            # the same tenant/service so they cannot allocate the same version.
+            conn.execute(
+                "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"horekia-blueprint:{POC_TENANT_ID}:{job_type_id}",),
+            )
+            duplicate_groups = {
+                "preguntas": [field.key for field in payload.fields],
+                "conceptos": [item.sku for item in payload.items],
+                "reglas": [rule.code for rule in payload.rules],
+                "medidas": [measure.code for measure in payload.measures],
+            }
+            for group, codes in duplicate_groups.items():
+                duplicates = sorted({code for code in codes if codes.count(code) > 1})
+                if duplicates:
+                    raise HTTPException(status_code=409, detail=f"Hay códigos repetidos en {group}: {', '.join(duplicates)}")
+            for field_index, field in enumerate(payload.fields):
+                visibility = field.visible_when
+                if not visibility:
+                    continue
+                controller_code = visibility.get("field")
+                expected_value = visibility.get("equals")
+                controller_index = next((index for index, candidate in enumerate(payload.fields) if candidate.key == controller_code), -1)
+                if not isinstance(controller_code, str) or not isinstance(expected_value, str) or not expected_value.strip():
+                    raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe indicar field y equals.")
+                if controller_index < 0 or payload.fields[controller_index].type != "choice":
+                    raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe depender de una pregunta de opción existente.")
+                if controller_index >= field_index:
+                    raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe depender de una pregunta anterior.")
+                if expected_value not in payload.fields[controller_index].options:
+                    raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» usa una opción inexistente: {expected_value}")
 
             active_schema = conn.execute(
                 """

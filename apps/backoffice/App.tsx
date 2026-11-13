@@ -40,6 +40,7 @@ type KnowledgeEntry = { id: string; kind: string; title: string; content?: strin
 type HelpMessage = { role: "user" | "assistant"; content: string };
 type RequestSummary = { id: string; status: string; source: string; intake_data: Record<string, unknown>; missing_fields: string[]; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null; customer_email?: string | null; quote_id?: string | null; quote_status?: string | null; quote_total?: number | string | null; quote_currency?: string | null };
 type QuoteSummary = { id: string; request_id?: string | null; status: string; currency: string; subtotal: number | string; tax_amount: number | string; total: number | string; valid_until?: string | null; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null };
+type VisibilityCondition = { field: string; equals: string };
 type TenantProfile = {
   legal_name: string | null;
   display_name: string | null;
@@ -66,7 +67,7 @@ type TenantProfile = {
   metadata: Record<string, unknown>;
 };
 type DependentOptions = { field: string; options_by_value: Record<string, string[]> };
-type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string; example?: string; depends_on?: DependentOptions };
+type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string; example?: string; depends_on?: DependentOptions; visible_when?: VisibilityCondition };
 type BlueprintItem = { sku: string; name: string; description?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, unknown> };
 type CatalogAttribute = { label: string; value: string };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
@@ -851,8 +852,8 @@ function Documentation() {
       <Text style={styles.documentationText}>Valores admitidos para kind: product, category, sales_pattern, policy, faq, document y other. Las columnas adicionales se conservan como metadatos.</Text>
       <Text style={styles.documentationText}>Para productos se recomienda completar code, category, unit, base_price y currency. El precio debe ser numérico, sin el símbolo de moneda.</Text>
       <Text style={styles.documentationText}>Para crear o ampliar un servicio usa el bloque Importar patrón de servicio. Ese CSV utiliza service_slug y record_type con valores service, field, item, rule o measure. Las filas se fusionan por code con el patrón existente.</Text>
-      <Text style={styles.codeBlock}>service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata,depends_on</Text>
-      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, catálogo, reglas, medidas, opciones, límites, ejemplos, metadatos y dependencias entre preguntas. En la fila service puedes usar metadata como {`{"sector_pack":"imprenta"}`} para clasificarlo. En depends_on puedes indicar qué pregunta anterior controla las opciones disponibles. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
+      <Text style={styles.codeBlock}>service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata,depends_on,visible_when</Text>
+      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, catálogo, reglas, medidas, opciones, límites, ejemplos, metadatos, dependencias y condiciones de visibilidad. En la fila service puedes usar metadata como {`{"sector_pack":"imprenta"}`} para clasificarlo. En depends_on puedes indicar qué pregunta anterior controla las opciones disponibles. En visible_when puedes hacer que una pregunta aparezca solo con una respuesta concreta, por ejemplo {`{"field":"format_type","equals":"Personalizado"}`}. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
     </DocumentationSection>
 
     <DocumentationSection number="5" title="Ejemplo de producto">
@@ -918,7 +919,7 @@ Catálogo:
 
 Regla:
 - floor_material_by_area = superficie_suelo × precio de Baldosa gres Brooklyn`}</Text>
-      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code. Para una pregunta dependiente añade la columna depends_on con un JSON que incluya field y options_by_value. En una importación completa, usa Reemplazar el patrón completo para retirar preguntas antiguas o duplicadas.</Text>
+      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code. Para una pregunta dependiente añade la columna depends_on con un JSON que incluya field y options_by_value. Para mostrar una pregunta solo en un caso concreto usa visible_when, por ejemplo {`{"field":"format_type","equals":"Personalizado"}`}, y activa Debe contestarse. En una importación completa, usa Reemplazar el patrón completo para retirar preguntas antiguas o duplicadas.</Text>
     </DocumentationDocumentSection>
   </View>;
 }
@@ -1245,7 +1246,17 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
           depends_on = { field: dependency.field, options_by_value: Object.fromEntries(Object.entries(dependency.options_by_value).map(([key, value]) => [key, Array.isArray(value) ? value.map(String) : []])) };
         } catch { return { error: `El depends_on de ${record.code} no contiene JSON válido.` }; }
       }
-      fields.push({ key: record.code, label: record.title || record.code, type: fieldType, required: ["true", "1", "si", "sí", "yes"].includes((record.required || "").toLowerCase()), options, unit: record.unit || undefined, min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, help_text: record.content || undefined, example: record.example || undefined, ...(depends_on ? { depends_on } : {}) });
+      let visible_when: VisibilityCondition | undefined;
+      if (record.visible_when) {
+        try {
+          const parsed = JSON.parse(record.visible_when) as unknown;
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("no es un objeto");
+          const condition = parsed as Partial<VisibilityCondition>;
+          if (typeof condition.field !== "string" || typeof condition.equals !== "string" || !condition.equals.trim()) throw new Error("debe contener field y equals");
+          visible_when = { field: condition.field, equals: condition.equals };
+        } catch { return { error: `El visible_when de ${record.code} no contiene JSON válido.` }; }
+      }
+      fields.push({ key: record.code, label: record.title || record.code, type: fieldType, required: ["true", "1", "si", "sí", "yes"].includes((record.required || "").toLowerCase()), options, unit: record.unit || undefined, min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, help_text: record.content || undefined, example: record.example || undefined, ...(depends_on ? { depends_on } : {}), ...(visible_when ? { visible_when } : {}) });
     } else if (recordType === "item" || recordType === "product") {
       const price = record.base_price ? Number(record.base_price.replace(",", ".")) : undefined;
       if (record.base_price && !Number.isFinite(price)) return { error: `Precio no válido para ${record.code}.` };
@@ -1535,6 +1546,7 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   const rulePositions = useRef<Record<number, number>>({});
   const fieldEditorIds = useRef<string[]>([]);
   const nextFieldEditorId = useRef(0);
+  const saveInFlightRef = useRef(false);
 
   const createFieldEditorId = () => `field-editor-${nextFieldEditorId.current++}`;
   const resetFieldEditorIds = (fields: BlueprintField[]) => {
@@ -1634,6 +1646,8 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   const addRule = (kind: BlueprintRule["kind"]) => { markDesignerDirty(); if (fullScreen) selectDesignerSection("rules"); const index = ruleCards.length; setExpandedBlockKey(`rule-${index}`); setRuleCards([...ruleCards, editableRule({ code: "", kind, priority: (index + 1) * 10, definition: defaultRuleDefinition(kind) })]); setScrollTarget({ section: "rule", index }); highlightNewBlock("rule", index); };
   const removeRule = (index: number) => { markDesignerDirty(); setRuleCards(ruleCards.filter((_, ruleIndex) => ruleIndex !== index)); };
   const save = async (blockKey?: string, draftOverride?: ServiceBlueprint) => {
+    if (saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
     const workingDraft = draftOverride ?? draft;
     setSavingBlockKey(blockKey ?? null);
     try {
@@ -1682,6 +1696,7 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
     } catch (error) {
       setDesignerError(error instanceof Error ? error.message : "JSON de reglas no válido");
     } finally {
+      saveInFlightRef.current = false;
       setSavingBlockKey(null);
     }
   };
@@ -1737,7 +1752,7 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
             <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Las flechas solo cambian el orden en que se preguntará.</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar preguntas por nombre o código…" /> : null}
             <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.fields.map((field, index) => <Animated.View onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${field.label} ${field.key}`) ? styles.hidden : null]} key={fieldEditorIds.current[index] ?? `field-editor-fallback-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}` ? "▲" : "▼"}</Text><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text></Pressable><Pressable onPress={() => moveField(index, -1)}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`field-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `field-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeField(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`}><View style={styles.designerRow}><Field label="Código interno" hint="Se genera automáticamente a partir del nombre de la pregunta y lo utiliza el motor de reglas. No necesitas escribirlo." value={field.key} onChangeText={() => undefined} editable={false} /><Field label="Pregunta para el cliente" hint="Es la pregunta que verá la persona en el chatbot. Escríbela como se la dirías directamente." value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type, ...(type !== "choice" ? { depends_on: undefined } : {}) })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: gres, porcelánico, microcemento." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />}{field.type === "number" ? <UnitSelector value={field.unit || "m²"} onChange={(unit) => updateField(index, { unit })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>{field.type === "choice" ? <DependentOptionsEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(depends_on) => updateField(index, { depends_on })} /> : null}<View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</AnimatedCollapse></Animated.View>)}
+            {draft.fields.map((field, index) => <Animated.View onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${field.label} ${field.key}`) ? styles.hidden : null]} key={fieldEditorIds.current[index] ?? `field-editor-fallback-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}` ? "▲" : "▼"}</Text><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text></Pressable><Pressable onPress={() => moveField(index, -1)} disabled={saving}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)} disabled={saving}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`field-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `field-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeField(index)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`}><View style={styles.designerRow}><Field label="Código interno" hint="Se genera automáticamente a partir del nombre de la pregunta y lo utiliza el motor de reglas. No necesitas escribirlo." value={field.key} onChangeText={() => undefined} editable={false} /><Field label="Pregunta para el cliente" hint="Es la pregunta que verá la persona en el chatbot. Escríbela como se la dirías directamente." value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type, ...(type !== "choice" ? { depends_on: undefined } : {}) })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: gres, porcelánico, microcemento." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />}{field.type === "number" ? <UnitSelector value={field.unit || "m²"} onChange={(unit) => updateField(index, { unit })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>{field.type === "choice" ? <DependentOptionsEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(depends_on) => updateField(index, { depends_on })} /> : null}<VisibleWhenEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(visible_when) => updateField(index, { visible_when })} /><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</AnimatedCollapse></Animated.View>)}
             </View><View style={fullScreen && designerSection !== "items" ? styles.hidden : null}><Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar conceptos por nombre o código…" /> : null}
             <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
@@ -1765,7 +1780,7 @@ function emptyBlueprint(): ServiceBlueprint {
   return { fields: [], items: [], rules: [], measures: [] };
 }
 
-const SERVICE_CSV_HEADERS = ["service_slug", "record_type", "order", "code", "title", "content", "type", "options", "required", "unit", "min", "max", "example", "base_price", "currency", "priority", "rule_kind", "definition", "expression", "metadata", "depends_on"];
+const SERVICE_CSV_HEADERS = ["service_slug", "record_type", "order", "code", "title", "content", "type", "options", "required", "unit", "min", "max", "example", "base_price", "currency", "priority", "rule_kind", "definition", "expression", "metadata", "depends_on", "visible_when"];
 
 function csvCell(value: unknown): string {
   if (value === undefined || value === null) return "";
@@ -1774,11 +1789,11 @@ function csvCell(value: unknown): string {
 }
 
 function serviceBlueprintToCsv(service: JobType, blueprint: ServiceBlueprint): string {
-  const rows: unknown[][] = [[service.slug, "service", "", "", service.name, service.description ?? "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]];
-  blueprint.fields.forEach((field, index) => rows.push([service.slug, "field", index + 1, field.key, field.label, field.help_text ?? "", field.type, field.options.join("|"), field.required, field.unit ?? "", field.min ?? "", field.max ?? "", field.example ?? "", "", "", "", "", "", "", "", field.depends_on ? JSON.stringify(field.depends_on) : ""]));
-  blueprint.items.forEach((item, index) => rows.push([service.slug, "item", index + 1, item.sku, item.name, item.description ?? "", "", "", "", item.unit, "", "", "", item.base_price ?? "", item.currency, "", "", "", "", JSON.stringify(item.metadata ?? {}), ""]));
-  blueprint.rules.forEach((rule, index) => rows.push([service.slug, "rule", index + 1, rule.code, "", "", "", "", "", "", "", "", "", "", "", rule.priority, rule.kind, JSON.stringify(rule.definition), "", "", ""]));
-  blueprint.measures.forEach((measure, index) => rows.push([service.slug, "measure", index + 1, measure.code, "", "", "", "", "", "", "", "", "", "", "", "", "", "", JSON.stringify(measure.expression), "", ""]));
+  const rows: unknown[][] = [[service.slug, "service", "", "", service.name, service.description ?? "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]];
+  blueprint.fields.forEach((field, index) => rows.push([service.slug, "field", index + 1, field.key, field.label, field.help_text ?? "", field.type, field.options.join("|"), field.required, field.unit ?? "", field.min ?? "", field.max ?? "", field.example ?? "", "", "", "", "", "", "", "", field.depends_on ? JSON.stringify(field.depends_on) : "", field.visible_when ? JSON.stringify(field.visible_when) : ""]));
+  blueprint.items.forEach((item, index) => rows.push([service.slug, "item", index + 1, item.sku, item.name, item.description ?? "", "", "", "", item.unit, "", "", "", item.base_price ?? "", item.currency, "", "", "", "", JSON.stringify(item.metadata ?? {}), "", ""]));
+  blueprint.rules.forEach((rule, index) => rows.push([service.slug, "rule", index + 1, rule.code, "", "", "", "", "", "", "", "", "", "", "", rule.priority, rule.kind, JSON.stringify(rule.definition), "", "", "", ""]));
+  blueprint.measures.forEach((measure, index) => rows.push([service.slug, "measure", index + 1, measure.code, "", "", "", "", "", "", "", "", "", "", "", "", "", "", JSON.stringify(measure.expression), "", "", ""]));
   return [SERVICE_CSV_HEADERS, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
@@ -2082,6 +2097,19 @@ function DependentOptionsEditor({ field, candidates, onChange }: { field: Bluepr
     onChange({ ...dependency, options_by_value: { ...dependency.options_by_value, [controllerOption]: value.split(",").map((option) => option.trim()).filter(Boolean) } });
   };
   return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Opciones dependientes</Text><Text style={styles.dependencyHint}>Elige una pregunta anterior para que las opciones de esta pregunta cambien según la respuesta. Ejemplo: el material disponible depende del tipo de bolsa.</Text>{candidates.length ? <ReferenceSelector label="Depende de" hint="La pregunta anterior que determina qué opciones puede elegir el cliente." value={dependency?.field ?? ""} options={selectorOptions} onChange={selectController} /> : <Text style={styles.dependencyEmpty}>Añade primero otra pregunta de tipo Opción.</Text>}{controller ? <View style={styles.dependencyMappings}><Text style={styles.fieldLabel}>Opciones válidas para cada respuesta</Text>{controller.options.map((option) => <Field key={option} label={`Si responde «${option}»`} hint="Escribe las opciones permitidas separadas por comas." value={(dependency?.options_by_value?.[option] ?? []).join(", ")} onChangeText={(value) => updateMapping(option, value)} placeholder="Ejemplo: algodón, hilo, lana" />)}</View> : null}</View>;
+}
+
+function VisibleWhenEditor({ field, candidates, onChange }: { field: BlueprintField; candidates: BlueprintField[]; onChange: (visible_when?: VisibilityCondition) => void }) {
+  const condition = field.visible_when;
+  const controller = candidates.find((candidate) => candidate.key === condition?.field);
+  const selectorOptions: ReferenceOption[] = [{ value: "", label: "Siempre visible" }, ...candidates.map((candidate) => ({ value: candidate.key, label: candidate.label }))];
+  const valueOptions: ReferenceOption[] = (controller?.options ?? []).map((option) => ({ value: option, label: option }));
+  const selectController = (value: string) => {
+    if (!value) { onChange(undefined); return; }
+    const nextController = candidates.find((candidate) => candidate.key === value);
+    onChange({ field: value, equals: nextController?.options[0] ?? "" });
+  };
+  return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Mostrar pregunta solo si…</Text><Text style={styles.dependencyHint}>Haz que esta pregunta aparezca únicamente cuando el cliente haya dado una respuesta concreta a una pregunta anterior. Ejemplo: pedir medidas solo si el formato es Personalizado.</Text>{candidates.length ? <ReferenceSelector label="Pregunta que controla" hint="Debe ser una pregunta anterior, normalmente de tipo Opción." value={condition?.field ?? ""} options={selectorOptions} onChange={selectController} /> : <Text style={styles.dependencyEmpty}>Añade primero la pregunta que debe controlar esta condición.</Text>}{controller ? <ReferenceSelector label="Respuesta que la activa" hint="La pregunta aparecerá cuando la respuesta coincida con este valor." value={condition?.equals ?? ""} options={valueOptions} onChange={(equals) => onChange({ field: controller.key, equals })} /> : null}</View>;
 }
 
 function DesignerSectionTabs({ value, onChange, counts }: { value: DesignerSection; onChange: (section: DesignerSection) => void; counts: Record<DesignerSection, number> }) {
