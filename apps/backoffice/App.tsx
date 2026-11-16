@@ -30,8 +30,8 @@ type Summary = {
 
 type SectorPack = { id: string; slug: string; name: string; description?: string | null };
 type NewSectorPack = { slug: string; name: string; description: string };
-type JobType = { id: string; slug: string; name: string; description?: string | null; status: string; sector_pack_id?: string | null; sector_pack_slug?: string | null; sector_pack_name?: string | null; sector_pack_description?: string | null };
-type NewService = { slug: string; name: string; description: string; sector_pack_id?: string };
+type JobType = { id: string; slug: string; name: string; description?: string | null; image_url?: string | null; status: string; sector_pack_id?: string | null; sector_pack_slug?: string | null; sector_pack_name?: string | null; sector_pack_description?: string | null };
+type NewService = { slug: string; name: string; description: string; sector_pack_id?: string; imageFile?: File | null };
 type BulkServiceDraft = NewService & { id: number };
 type BulkCreateResult = { created: number; errors: string[] };
 type KnowledgeRow = { kind: string; title: string; content: string; code?: string; category?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, string> };
@@ -379,10 +379,21 @@ export default function App() {
     setSaving(true);
     setError(null);
     try {
+      const { imageFile, ...servicePayload } = newService;
       const created = await api<JobType>("/api/v1/backoffice/job-types", {
         method: "POST",
-        body: JSON.stringify(newService),
+        body: JSON.stringify(servicePayload),
       });
+      if (imageFile) {
+        const form = new FormData();
+        form.append("file", imageFile);
+        try {
+          const withImage = await api<JobType>(`/api/v1/backoffice/job-types/${created.id}/image`, { method: "POST", body: form });
+          Object.assign(created, withImage);
+        } catch {
+          setError("El servicio se ha creado, pero no se ha podido cargar su imagen.");
+        }
+      }
       setServices((current) => current.some((service) => service.id === created.id) ? current.map((service) => service.id === created.id ? created : service) : [...current, created].sort((left, right) => left.name.localeCompare(right.name)));
       setSummary((current) => current ? { ...current, counts: { ...current.counts, job_types: current.counts.job_types + 1 } } : current);
       await load();
@@ -419,9 +430,10 @@ export default function App() {
     try {
       for (const newService of newServices) {
         try {
+          const { imageFile: _imageFile, ...servicePayload } = newService;
           await api<JobType>("/api/v1/backoffice/job-types", {
             method: "POST",
-            body: JSON.stringify(newService),
+            body: JSON.stringify(servicePayload),
           });
           created += 1;
         } catch {
@@ -1692,8 +1704,23 @@ function DeleteKnowledgeModal({ entry, onClose, onConfirm, saving }: { entry: Kn
   return <Modal visible={Boolean(entry)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar entrada</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{entry?.title}</Text><Text style={styles.wizardText}>{entry?.kind === "product" ? "Se archivará la entrada y también su partida de catálogo asociada." : "Se archivará esta entrada de la base de conocimiento."}</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer desde el backoffice.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
+function ServiceImagePicker({ file, onChange }: { file: File | null; onChange: (file: File | null) => void }) {
+  const inputRef = useRef<any>(null);
+  const openPicker = () => {
+    if (Platform.OS === "web") inputRef.current?.click();
+  };
+  return <View style={styles.field}>
+    <InfoLabel label="Imagen ilustrativa" hint="Icono que se mostrará junto al servicio en el website público. Puedes subir PNG, JPG, WEBP o SVG, hasta 5 MB." />
+    {Platform.OS === "web" ? createElement("input", { ref: inputRef, type: "file", accept: "image/png,image/jpeg,image/webp,image/svg+xml", style: { display: "none" }, onChange: (event: { target?: { files?: FileList | null } }) => onChange(event.target?.files?.[0] ?? null) }) : null}
+    <Pressable style={styles.secondaryButton} onPress={openPicker} disabled={Platform.OS !== "web"}>
+      <Text style={styles.secondaryLabel}>{file ? "Cambiar imagen" : "Seleccionar imagen"}</Text>
+    </Pressable>
+    <Text style={styles.listMeta}>{file ? file.name : Platform.OS === "web" ? "Opcional. Si no subes una imagen se usará noimage.png." : "La carga de imágenes está disponible en la versión web."}</Text>
+  </View>;
+}
+
 function ServiceModal({ visible, services, sectorPacks, onClose, onCreate, saving, subtitle = "Añádelo sin salir del contexto del Wizard o del catálogo." }: { visible: boolean; services: JobType[]; sectorPacks: SectorPack[]; onClose: () => void; onCreate: (service: NewService) => Promise<boolean>; saving: boolean; subtitle?: string }) {
-  const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "", sector_pack_id: "" });
+  const [draft, setDraft] = useState<NewService>({ slug: "", name: "", description: "", sector_pack_id: "", imageFile: null });
   const [validationError, setValidationError] = useState<string | null>(null);
   const slugExists = Boolean(draft.slug) && services.some((service) => service.slug === draft.slug);
   const submit = async () => {
@@ -1710,7 +1737,7 @@ function ServiceModal({ visible, services, sectorPacks, onClose, onCreate, savin
       return;
     }
     if (await onCreate(draft)) {
-      setDraft({ slug: "", name: "", description: "", sector_pack_id: "" });
+      setDraft({ slug: "", name: "", description: "", sector_pack_id: "", imageFile: null });
       setValidationError(null);
       onClose();
     }
@@ -1727,6 +1754,7 @@ function ServiceModal({ visible, services, sectorPacks, onClose, onCreate, savin
           </View>
           <SectorPackSelector sectorPacks={sectorPacks} value={draft.sector_pack_id ?? ""} onChange={(sector_pack_id) => setDraft({ ...draft, sector_pack_id })} />
           <Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />
+          <ServiceImagePicker file={draft.imageFile ?? null} onChange={(imageFile) => setDraft({ ...draft, imageFile })} />
           {validationError ? <Text style={styles.error}>{validationError}</Text> : null}
           <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={submit} disabled={saving || !draft.name.trim() || slugExists || !draft.sector_pack_id}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Añadir servicio"}</Text></Pressable></View>
         </View>

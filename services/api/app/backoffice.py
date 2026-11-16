@@ -453,7 +453,7 @@ def list_job_types(settings: Settings = Depends(get_settings)) -> list[dict[str,
         with db_session(settings) as conn:
             return conn.execute(
                 """
-                select j.id, j.slug, j.name, j.description, j.status, j.created_at, j.updated_at,
+                select j.id, j.slug, j.name, j.description, j.image_url, j.status, j.created_at, j.updated_at,
                        st.id as sector_pack_id, st.slug as sector_pack_slug,
                        st.name as sector_pack_name, st.description as sector_pack_description
                 from public.horekia_job_types j
@@ -481,7 +481,7 @@ def create_job_type(payload: JobTypeCreate, settings: Settings = Depends(get_set
             ).fetchone()
             return conn.execute(
                 """
-                select j.id, j.slug, j.name, j.description, j.status, j.created_at, j.updated_at,
+                select j.id, j.slug, j.name, j.description, j.image_url, j.status, j.created_at, j.updated_at,
                        st.id as sector_pack_id, st.slug as sector_pack_slug,
                        st.name as sector_pack_name, st.description as sector_pack_description
                 from public.horekia_job_types j
@@ -513,7 +513,7 @@ def update_job_type(job_type_id: UUID, payload: JobTypePatch, settings: Settings
                 raise HTTPException(status_code=404, detail="Servicio no encontrado")
             return conn.execute(
                 """
-                select j.id, j.slug, j.name, j.description, j.status, j.created_at, j.updated_at,
+                select j.id, j.slug, j.name, j.description, j.image_url, j.status, j.created_at, j.updated_at,
                        st.id as sector_pack_id, st.slug as sector_pack_slug,
                        st.name as sector_pack_name, st.description as sector_pack_description
                 from public.horekia_job_types j
@@ -987,6 +987,75 @@ def _product_image_path(settings: Settings, product_id: UUID, extension: str) ->
 
 def _product_image_url(settings: Settings, product_id: UUID, extension: str) -> str:
     return f"{settings.media_public_base_url.rstrip('/')}/products/{POC_TENANT_ID}/{product_id}{extension}"
+
+
+def _job_type_image_path(settings: Settings, job_type_id: UUID, extension: str) -> Path:
+    tenant_dir = Path(settings.product_upload_dir).parent / "services" / str(POC_TENANT_ID)
+    return tenant_dir / f"{job_type_id}{extension}"
+
+
+def _job_type_image_url(settings: Settings, job_type_id: UUID, extension: str) -> str:
+    return f"{settings.media_public_base_url.rstrip('/')}/services/{POC_TENANT_ID}/{job_type_id}{extension}"
+
+
+@router.post("/job-types/{job_type_id}/image")
+def upload_job_type_image(job_type_id: UUID, file: UploadFile = File(...), settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    """Store an optional public service icon in the POC server directory."""
+
+    filename = (file.filename or "").lower()
+    extensions = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+    }
+    extension = extensions.get(file.content_type or "")
+    if extension is None:
+        extension = (
+            ".jpg" if filename.endswith((".jpg", ".jpeg")) else
+            ".png" if filename.endswith(".png") else
+            ".webp" if filename.endswith(".webp") else
+            ".svg" if filename.endswith(".svg") else None
+        )
+    if extension is None:
+        raise HTTPException(status_code=415, detail="La imagen debe ser PNG, JPG, WEBP o SVG")
+    content = file.file.read(5 * 1024 * 1024 + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="La imagen está vacía")
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="La imagen no puede superar 5 MB")
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                select id
+                from public.horekia_job_types
+                where tenant_id = %s and id = %s and status = 'active'
+                """,
+                (POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Servicio no encontrado")
+            for old_extension in (".png", ".jpg", ".webp", ".svg"):
+                _job_type_image_path(settings, job_type_id, old_extension).unlink(missing_ok=True)
+            target = _job_type_image_path(settings, job_type_id, extension)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            image_url = _job_type_image_url(settings, job_type_id, extension)
+            updated = conn.execute(
+                """
+                update public.horekia_job_types
+                set image_url = %s, updated_at = now()
+                where tenant_id = %s and id = %s
+                returning id, slug, name, description, image_url, status, created_at, updated_at
+                """,
+                (image_url, POC_TENANT_ID, job_type_id),
+            ).fetchone()
+            return updated
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
 
 
 @router.post("/products/{product_id}/image")

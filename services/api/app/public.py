@@ -1177,7 +1177,7 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
         tenant = _tenant_by_slug(conn, tenant_slug)
         return conn.execute(
             """
-            select j.slug, j.name, j.description, j.created_at,
+            select j.slug, j.name, j.description, j.image_url, j.created_at,
                    st.name as sector_pack_name
             from public.horekia_job_types j
             left join public.horekia_service_types st on st.tenant_id = j.tenant_id and st.id = j.service_type_id
