@@ -5,15 +5,17 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 from uuid import UUID
 
 import psycopg
 from dotenv import load_dotenv
 
-from services.api.app.auth import _hash_password
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "services" / "api"))
+
+from app.auth import _hash_password  # noqa: E402
 POC_TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
