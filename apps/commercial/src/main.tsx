@@ -47,7 +47,8 @@ function App() {
   const submitContact = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (contactStatus === "sending") return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setContactStatus("sending");
     setContactMessage("");
     try {
@@ -67,7 +68,7 @@ function App() {
       });
       const result = await response.json().catch(() => ({})) as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "No se ha podido enviar la solicitud. Inténtalo de nuevo.");
-      event.currentTarget.reset();
+      formElement.reset();
       setContactStatus("success");
       setContactMessage("Gracias. Hemos recibido tu consulta y te responderemos por email.");
     } catch (error) {
