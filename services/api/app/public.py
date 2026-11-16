@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .calculator import CalculationError, calculate_quote
 from .config import Settings, get_settings
 from .db import POC_TENANT_ID, db_session
-from .email import EmailDeliveryError, send_quote_email
+from .email import EmailDeliveryError, send_contact_email, send_quote_email
 from .geo import CITY_COORDINATES, COVERAGE_FIELD, COVERAGE_FIELD_KEY, check_service_coverage
 from .pdf import build_quote_pdf
 
@@ -76,6 +76,39 @@ class CustomerLogin(BaseModel):
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized):
             raise ValueError("Escribe un email válido")
         return normalized
+
+
+class ContactRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    email: str = Field(min_length=5, max_length=240)
+    company: str = Field(min_length=2, max_length=160)
+    phone: str | None = Field(default=None, max_length=80)
+    sector: str | None = Field(default=None, max_length=120)
+    message: str = Field(min_length=10, max_length=4000)
+    privacy_acknowledged: bool = Field(default=False, alias="privacyAcknowledged")
+    website: str | None = Field(default=None, max_length=240)
+
+    @field_validator("name", "company", "message")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Este dato es obligatorio")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def validate_contact_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized):
+            raise ValueError("Escribe un email válido")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_privacy(self) -> "ContactRequest":
+        if not self.privacy_acknowledged:
+            raise ValueError("Debes aceptar el tratamiento de la solicitud")
+        return self
 
 
 class ChatMessage(BaseModel):
@@ -1188,6 +1221,45 @@ def public_services(tenant_slug: str, settings: Settings = Depends(get_settings)
             """,
             (tenant["id"],),
         ).fetchall()
+
+
+@router.post("/contact", status_code=status.HTTP_202_ACCEPTED)
+def commercial_contact(payload: ContactRequest, settings: Settings = Depends(get_settings)) -> dict[str, bool]:  # noqa: B008
+    """Forward the commercial contact form to the configured Horekia recipient."""
+
+    # Silent success for the honeypot avoids teaching automated senders which field was detected.
+    if payload.website:
+        return {"ok": True}
+    try:
+        with db_session(settings) as conn:
+            profile = conn.execute(
+                """
+                select display_name, legal_name, contact_email, quotes_email
+                from public.horekia_tenant_profiles
+                where tenant_id = %s
+                """,
+                (POC_TENANT_ID,),
+            ).fetchone() or {}
+        recipient = profile.get("contact_email") or profile.get("quotes_email") or settings.resend_from_email
+        if not recipient:
+            raise EmailDeliveryError("No hay un destinatario comercial configurado")
+        send_contact_email(
+            settings=settings,
+            recipient=recipient,
+            sender_name=payload.name,
+            sender_email=payload.email,
+            company=payload.company,
+            phone=payload.phone,
+            sector=payload.sector,
+            message=payload.message,
+        )
+        return {"ok": True}
+    except EmailDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No se ha podido enviar la solicitud de contacto") from exc
 
 
 @router.post("/tenants/{tenant_slug}/auth/login")
