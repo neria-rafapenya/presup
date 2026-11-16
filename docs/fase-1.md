@@ -23,7 +23,7 @@
 
 ## Validación realizada
 
-Se han comprobado sintaxis Python, JSON, contrato de variables, exclusión de secretos, instalación Yarn, typecheck Expo, configuración Compose, tests FastAPI, arranque de la API y bundle Web del backoffice. La API y el backoffice responden localmente sin Docker; la base usada para la POC es el proyecto Supabase real autorizado y contiene únicamente datos ficticios Horekia. No se usa Supabase Auth.
+Se han comprobado sintaxis Python, JSON, contrato de variables, exclusión de secretos, instalación Yarn, typecheck Expo, configuración Compose, tests FastAPI, arranque de la API y bundles Web del backoffice y del chat. La API y las aplicaciones responden localmente sin Docker; la base usada para la POC es el proyecto Supabase real autorizado y contiene únicamente datos ficticios Horekia. No se usa Supabase Auth.
 
 ## Comandos de validación cuando el entorno esté disponible
 
@@ -62,4 +62,4 @@ Fase 1 queda cerrada para el alcance de esta POC:
 - El chat público pide nombre y email antes de iniciar una solicitud. Cuando el motor termina el presupuesto, el cliente crea una contraseña y recibe una sesión de Horekia automáticamente; el importe no se muestra en pantalla: el presupuesto se entrega por email. Si el cliente ya tiene una sesión válida, no se repite el alta.
 - La entrega del presupuesto se realiza por email, no en pantalla: el backend genera un PDF estándar, incorpora las páginas de la plantilla PDF del tenant si existe y lo envía mediante Resend. Los intentos quedan registrados en `horekia_quote_deliveries` para evitar duplicados.
 
-Fuera de esta POC quedan la autenticación del backoffice, Supabase Auth, Storage compartido, subida de adjuntos desde el chat y despliegue. La cuenta ligera del cliente se almacena en tablas `horekia_*` y no depende de Supabase Auth. La entrega real requiere configurar `RESEND_API_KEY` y un `RESEND_FROM_EMAIL` verificado. El chat público combina Gemini para aclaraciones contextuales y lenguaje natural con la ficha y el motor determinista para capturar datos y calcular importes. La prueba usa datos ficticios y no debe considerarse una tarifa real.
+El backoffice ya dispone de autenticación propia de la POC mediante `horekia_backoffice_users` y `horekia_backoffice_sessions`, con cuenta maestra inicializada desde variables privadas y sesiones revocables. Supabase Auth sigue fuera de alcance. Storage compartido, subida de adjuntos desde el chat y una gestión multiusuario completa quedan para una fase posterior. La entrega real requiere configurar `RESEND_API_KEY` y un `RESEND_FROM_EMAIL` verificado. El chat público combina Gemini para aclaraciones contextuales y lenguaje natural con la ficha y el motor determinista para capturar datos y calcular importes. La prueba usa datos ficticios y no debe considerarse una tarifa real.

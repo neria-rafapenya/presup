@@ -1,6 +1,7 @@
 """Runtime configuration with safe local defaults."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,17 @@ class Settings(BaseSettings):
     resend_api_key: str = Field(default="", validation_alias="RESEND_API_KEY")
     resend_from_email: str = Field(default="", validation_alias="RESEND_FROM_EMAIL")
     resend_from_name: str = Field(default="Horekia", validation_alias="RESEND_FROM_NAME")
+    product_upload_dir: str = Field(
+        default=str(Path(__file__).resolve().parents[1] / "uploads" / "products"),
+        validation_alias="PRODUCT_UPLOAD_DIR",
+    )
+    media_public_base_url: str = Field(default="http://localhost:8000/media", validation_alias="MEDIA_PUBLIC_BASE_URL")
+    cors_origins_raw: str = Field(
+        default="http://localhost:8081,http://127.0.0.1:8081,http://localhost:8082,http://127.0.0.1:8082",
+        validation_alias="CORS_ORIGINS",
+    )
+    backoffice_master_email: str = Field(default="", validation_alias="BACKOFFICE_MASTER_EMAIL")
+    backoffice_master_password: str = Field(default="", validation_alias="BACKOFFICE_MASTER_PASSWORD")
 
     @model_validator(mode="after")
     def validate_runtime_contract(self) -> "Settings":
@@ -41,6 +53,10 @@ class Settings(BaseSettings):
     @property
     def email_configured(self) -> bool:
         return bool(self.resend_api_key and self.resend_from_email)
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.cors_origins_raw.split(",") if origin.strip()]
 
     def public_summary(self) -> dict[str, bool]:
         """Return non-sensitive state suitable for diagnostics and tests."""

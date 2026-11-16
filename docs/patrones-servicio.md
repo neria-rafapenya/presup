@@ -13,17 +13,18 @@ Un patrón de servicio describe cómo un tenant vende, pregunta y calcula un tip
 }
 ```
 
-- `fields`: preguntas que el chatbot debe responder o solicitar. Pueden ser números, opciones, booleanos, texto, fechas o archivos.
-- `items`: productos, materiales, piezas, mano de obra y recargos con precio base determinista.
+- `fields`: preguntas que el chatbot debe responder o solicitar. Pueden ser números, opciones, colores, booleanos, texto, fechas o archivos.
+- `items`: conceptos facturables propios del servicio, como materiales, mano de obra y recargos.
 - `rules`: mínimos, factores, recargos y fórmulas. Se ejecutarán en el motor de cálculo, no en Gemini.
 - `measures`: valores derivados como superficie, horas o unidades facturables.
 
 ## Productos concretos y catálogo
 
 Un concepto genérico como `camiseta manga larga` puede asociarse a uno o varios productos
-concretos del catálogo. Los productos se cargan como filas `product` del CSV y guardan sus
-datos agnósticos en `metadata.catalog_product`: categoría jerárquica, marca, modelo, material,
-gramaje, colores, tallas, imagen y referencia externa.
+concretos del catálogo general del tenant. Los productos se crean desde el menú `Productos`
+y guardan sus datos agnósticos en `metadata.catalog_product`: categoría jerárquica, marca,
+modelo, material, gramaje, colores, tallas, imagen y referencia externa. No se crean dentro
+del patrón ni se duplican por servicio.
 
 La pregunta de tipo `choice` puede incluir `product_options`, por ejemplo:
 
@@ -34,9 +35,24 @@ La pregunta de tipo `choice` puede incluir `product_options`, por ejemplo:
 }
 ```
 
-En el frontend, el cliente selecciona primero la opción y después el modelo en una galería.
+En el diseñador, cada opción permite elegir una categoría, después un producto y pulsar
+`Asignar`; se pueden asociar varios productos. En el frontend, el cliente selecciona primero
+la opción y después el modelo en una galería.
 La conversación conserva el SKU elegido para que las reglas deterministas apliquen el precio
 del producto exacto. Más adelante estos productos podrán sincronizarse con el ERP del tenant.
+
+## Colores
+
+Cuando el cliente deba escoger un color, usa un `field` de tipo `color` en lugar de una lista
+de texto. Su `color_config` puede indicar el origen (`product`, `tenant_palette`, `mixed` o
+`free`), los sistemas admitidos (`RAL`, `NCS`, `Pantone`, `HEX`, `RGB` o `CMYK`) y una paleta
+con nombre, código y muestra hexadecimal. El chatbot muestra una tabla visual con buscador y
+permite introducir un color personalizado si `allow_custom` está activo. La respuesta se guarda
+como objeto estructurado, por ejemplo `{ "name": "Antracita", "system": "RAL", "code": "7016", "hex": "#383E42" }`.
+
+En el CSV de patrón, la columna `color_config` contiene ese JSON. El código de color es un dato
+de selección, no un precio: el importe se resuelve aparte mediante el producto asociado o una
+regla determinista.
 
 ## Ejemplo: bolsas impresas
 

@@ -13,14 +13,45 @@
         "properties": {
           "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
           "label": { "type": "string", "minLength": 1 },
-          "type": { "enum": ["text", "number", "boolean", "choice", "date", "file"] },
+          "type": { "enum": ["text", "number", "boolean", "choice", "color", "date", "file"] },
           "required": { "type": "boolean" },
           "options": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
           "unit": { "type": "string" },
           "min": { "type": "number" },
           "max": { "type": "number" },
           "help_text": { "type": "string" },
-          "example": { "type": "string" }
+          "example": { "type": "string" },
+          "depends_on": { "type": ["object", "null"] },
+          "visible_when": { "type": ["object", "null"] },
+          "product_options": {
+            "type": ["object", "null"],
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "color_config": {
+            "type": ["object", "null"],
+            "properties": {
+              "source": { "type": "string", "enum": ["product", "tenant_palette", "mixed", "free"] },
+              "systems": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+              "allow_custom": { "type": "boolean" },
+              "palette": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name", "hex"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "system": { "type": "string" },
+                    "code": { "type": "string" },
+                    "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{3,8}$" },
+                    "rgb": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+                    "cmyk": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }

@@ -61,9 +61,14 @@ def apply_schema(conn: psycopg.Connection) -> None:
 
 
 def apply_upgrades(conn: psycopg.Connection) -> None:
-    """Apply idempotent migrations added after the original POC bootstrap."""
+    """Apply idempotent upgrades added after the original POC bootstrap.
 
-    upgrades = [migration for migration in MIGRATIONS if migration.name >= "0006_"]
+    The first RLS migrations intentionally create policies without ``if not
+    exists``. An existing installation must not replay them. New incremental
+    migrations are kept idempotent and start at 0017.
+    """
+
+    upgrades = [migration for migration in MIGRATIONS if migration.name >= "0017_"]
     with conn.transaction():
         for migration in upgrades:
             conn.execute(migration.read_text())

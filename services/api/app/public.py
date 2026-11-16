@@ -103,6 +103,18 @@ def _blueprint(conn: Any, tenant_id: UUID, job_type_id: UUID) -> dict[str, Any]:
         """,
         (tenant_id, job_type_id),
     ).fetchall()
+    products = conn.execute(
+        """
+        select sku, name, description, unit, base_price, currency, metadata
+        from public.horekia_items
+        where tenant_id = %s and status = 'active'
+          and metadata ? 'catalog_product'
+        order by name
+        """,
+        (tenant_id,),
+    ).fetchall()
+    known_skus = {str(item.get("sku")) for item in items if item.get("sku")}
+    items = [*items, *[product for product in products if str(product.get("sku")) not in known_skus]]
     rules = conn.execute(
         """
         select code, kind, priority, definition
@@ -172,6 +184,31 @@ def _effective_field(field: dict[str, Any], intake: dict[str, Any] | None = None
     return effective
 
 
+def _selected_product_sizes(intake: dict[str, Any] | None, items: list[dict[str, Any]] | None) -> list[str]:
+    if not intake or not items:
+        return []
+    selected_skus = [str(value) for key, value in intake.items() if key.endswith("_product_sku") and value]
+    products_by_sku = {str(item.get("sku")): item for item in items if item.get("sku")}
+    for sku in reversed(selected_skus):
+        product = products_by_sku.get(sku)
+        metadata = product.get("metadata") if isinstance(product, dict) else None
+        catalog = metadata.get("catalog_product") if isinstance(metadata, dict) else None
+        sizes = catalog.get("sizes") if isinstance(catalog, dict) else None
+        if isinstance(sizes, list):
+            return [str(size).strip() for size in sizes if str(size).strip()]
+    return []
+
+
+def _field_with_product_context(field: dict[str, Any], intake: dict[str, Any] | None = None, items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    effective = _effective_field(field, intake)
+    sizes = _selected_product_sizes(intake, items)
+    if sizes and "talla" in str(effective.get("label", "")).casefold():
+        size_text = ", ".join(sizes[:-1]) + f" o {sizes[-1]}" if len(sizes) > 1 else sizes[0]
+        effective["help_text"] = f"El producto seleccionado está disponible en estas tallas: {size_text}."
+        effective["example"] = f"12 de {sizes[0]} y 13 de {sizes[1] if len(sizes) > 1 else sizes[0]}"
+    return effective
+
+
 def _field_is_visible(field: dict[str, Any], intake: dict[str, Any] | None = None) -> bool:
     condition = field.get("visible_when")
     if not condition:
@@ -188,9 +225,14 @@ def _field_is_visible(field: dict[str, Any], intake: dict[str, Any] | None = Non
     return str(actual_value).casefold() == expected_value.casefold()
 
 
-def _field_question(field: dict[str, Any], prompt_index: int = 0, intake: dict[str, Any] | None = None) -> str:
-    field = _effective_field(field, intake)
+def _field_question(field: dict[str, Any], prompt_index: int = 0, intake: dict[str, Any] | None = None, items: list[dict[str, Any]] | None = None) -> str:
+    field = _field_with_product_context(field, intake, items)
     label = field["label"].lower()
+    sizes = _selected_product_sizes(intake, items)
+    if sizes and "talla" in label:
+        size_text = ", ".join(f"**{size}**" for size in sizes[:-1]) + f" o **{sizes[-1]}**" if len(sizes) > 1 else f"**{sizes[0]}**"
+        question = field["label"].rstrip(".")
+        return f"{question} Para este producto están disponibles {size_text}. Por ejemplo: {field['example']}."
     if field.get("key") == COVERAGE_FIELD_KEY:
         return f"**{field['label'].rstrip()}**"
     if field["label"].rstrip().endswith("?"):
@@ -249,15 +291,11 @@ def _field_question(field: dict[str, Any], prompt_index: int = 0, intake: dict[s
 
 
 def _opening_message(service: dict[str, Any], customer_name: str | None = None) -> str:
-    service_name = service["name"].strip().lower()
-    if service_name.startswith("reforma de "):
-        need = f"Quieres reformar tu {service_name.removeprefix('reforma de ')}."
-    else:
-        need = f"Quieres pedir un presupuesto de {service_name}."
+    service_name = service["name"].strip()
     normalized_name = (customer_name or "").strip()
     safe_first_name = re.sub(r"[*_`]", "", normalized_name.split()[0]) if normalized_name else ""
     greeting = f"Hola, **{safe_first_name}**.\n\n" if safe_first_name else "Hola.\n\n"
-    return f"{greeting}{need}\n\nNecesito que me respondas a algunas preguntas para poder ofrecerte el presupuesto **más adecuado** a tus preferencias."
+    return f"{greeting}Parece que quieres preparar un presupuesto para **{service_name}**.\n\nAntes de entrar en detalles, **¿en qué ciudad o código postal deberíamos realizar el servicio?** Así compruebo primero si está dentro de nuestra zona de actuación."
 
 
 def _normalized_words(value: str) -> set[str]:
@@ -309,6 +347,8 @@ def _public_field(field: dict[str, Any] | None, intake: dict[str, Any] | None = 
         "unit": field.get("unit"),
         "options": field.get("options", []),
     }
+    if isinstance(field.get("color_config"), dict):
+        public_field["color_config"] = field["color_config"]
     product_options = field.get("product_options")
     if isinstance(product_options, dict) and items:
         products_by_sku = {str(item.get("sku")): item for item in items if item.get("sku")}
@@ -428,13 +468,467 @@ def _ask_gemini_public(
     return answer.strip() or None
 
 
+def _public_knowledge_context(conn: Any, tenant_id: UUID, service: dict[str, Any]) -> list[dict[str, str]]:
+    """Return a small, service-relevant slice of tenant knowledge for the public chat."""
+
+    rows = conn.execute(
+        """
+        select kind, title, content
+        from public.horekia_knowledge_entries
+        where tenant_id = %s and status = 'active'
+        order by updated_at desc
+        limit 160
+        """,
+        (tenant_id,),
+    ).fetchall()
+    service_terms = _normalized_words(f"{service.get('name', '')} {service.get('description') or ''}")
+    scored: list[tuple[int, dict[str, str]]] = []
+    for row in rows:
+        title = str(row.get("title") or "")
+        content = str(row.get("content") or "")
+        terms = _normalized_words(f"{title} {content}")
+        score = len(service_terms & terms)
+        if row.get("kind") in {"policy", "faq"}:
+            score += 1
+        if score:
+            scored.append((score, {"kind": str(row.get("kind") or "other"), "title": title[:240], "content": content[:1400]}))
+    if not scored:
+        scored = [(0, {"kind": str(row.get("kind") or "other"), "title": str(row.get("title") or "")[:240], "content": str(row.get("content") or "")[:1400]}) for row in rows[:20]]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    context: list[dict[str, str]] = []
+    total_chars = 0
+    for _, entry in scored:
+        entry_size = len(entry["title"]) + len(entry["content"])
+        if total_chars + entry_size > 12000:
+            break
+        context.append(entry)
+        total_chars += entry_size
+    return context
+
+
+def _public_gemini_context(service: dict[str, Any], blueprint: dict[str, Any], knowledge: list[dict[str, str]]) -> dict[str, Any]:
+    fields = []
+    for field in blueprint["fields"]:
+        fields.append({
+            "key": field.get("key"),
+            "label": field.get("label"),
+            "type": field.get("type"),
+            "required": bool(field.get("required")),
+            "options": field.get("options") or [],
+            "unit": field.get("unit"),
+            "help_text": field.get("help_text"),
+            "example": field.get("example"),
+            "depends_on": field.get("depends_on"),
+            "visible_when": field.get("visible_when"),
+        })
+    catalog = []
+    for item in blueprint["items"]:
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        catalog_product = metadata.get("catalog_product") if isinstance(metadata.get("catalog_product"), dict) else None
+        if catalog_product is not None:
+            catalog.append({
+                "sku": item.get("sku"),
+                "name": item.get("name"),
+                "description": item.get("description"),
+                "category_path": catalog_product.get("category_path") or [],
+                "brand": catalog_product.get("brand"),
+                "model": catalog_product.get("model"),
+                "material": catalog_product.get("material"),
+                "colors": catalog_product.get("colors") or [],
+                "sizes": catalog_product.get("sizes") or [],
+            })
+        else:
+            catalog.append({"sku": item.get("sku"), "name": item.get("name"), "description": item.get("description")})
+    return {
+        "service": {"name": service.get("name"), "description": service.get("description")},
+        "questions_available": fields,
+        "catalog_and_billable_concepts": catalog,
+        "knowledge_base": knowledge,
+    }
+
+
+def _parse_gemini_json(raw: str) -> dict[str, Any] | None:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _ask_gemini_conversation(
+    *,
+    service: dict[str, Any],
+    blueprint: dict[str, Any],
+    knowledge: list[dict[str, str]],
+    history: list[dict[str, Any]],
+    intake: dict[str, Any],
+    user_message: str,
+    settings: Settings,
+) -> dict[str, Any] | None:
+    """Let Gemini conduct the conversation while the server validates every extracted value."""
+
+    if settings.ai_mock or not settings.gemini_api_key:
+        return None
+    model = settings.gemini_model.removeprefix("models/")
+    context = _public_gemini_context(service, blueprint, knowledge)
+    system = (
+        "Eres el asistente conversacional de una empresa que prepara presupuestos. "
+        "Conduces una conversación natural sobre el servicio seleccionado, no un formulario rígido. "
+        "El cliente puede explicar su necesidad en cualquier orden, pedir consejo o describir un problema. "
+        "Comprende primero su intención y responde de forma cercana antes de pedir el siguiente dato. "
+        "Usa exclusivamente el contexto del negocio, el catálogo y la base de conocimiento proporcionados. "
+        "Puedes recomendar opciones que aparezcan en ese contexto, pero no inventes productos, materiales, "
+        "medidas, políticas ni disponibilidad. Nunca inventes precios ni calcules importes: el servidor lo hará. "
+        "Extrae únicamente datos que el cliente haya dicho o que sean una equivalencia inequívoca. "
+        "Para una opción, devuelve exactamente una de las opciones permitidas. Si el dato no está claro, no lo extraigas. "
+        "Comprueba que la opción o producto elegido sea coherente con la necesidad que el cliente acaba de describir. "
+        "Si, por ejemplo, el cliente dice que quiere pintar una cerca pero selecciona pintura para suelos, no avances ni "
+        "aceptes silenciosamente la combinación: devuelve needs_confirmation=true y pide confirmación de forma amable, "
+        "ofreciendo continuar con la opción elegida o volver a la opción adecuada. "
+        "Para una pregunta de tipo color, conserva la selección estructurada con nombre, sistema y código si el cliente los proporciona; no inventes códigos. "
+        "Haz una sola pregunta cada vez. No saludes de nuevo durante la conversación. "
+        "La ubicación debe solicitarse antes de cerrar o calcular el presupuesto, pero puedes entender primero la necesidad. "
+        "Si datos_ya_extraidos ya contiene ubicacion_servicio, no vuelvas a pedir la ciudad, localidad, dirección ni código postal. "
+        "Devuelve únicamente JSON válido con esta forma: "
+        '{"reply":"texto para el cliente","updates":[{"field":"clave","value":"valor"}],"next_field":"clave o null","needs_confirmation":false,"ready_for_quote":false}. '
+        "updates debe ser una lista; next_field debe ser una clave de questions_available o null; "
+        "needs_confirmation solo puede ser true cuando detectes una contradicción entre la necesidad expresada y la opción o producto elegido; en ese caso no avances la conversación. "
+        "Cuando el cliente indique horas estimadas, confirma que son una referencia y recuerda que se revisarán técnicamente; el presupuesto es orientativo y puede variar tras el estudio de viabilidad y el contrato. "
+        "ready_for_quote solo puede ser true si ya están claros todos los datos obligatorios y la ubicación."
+    )
+    context_text = json.dumps({"contexto": context, "datos_ya_extraidos": intake}, ensure_ascii=False)
+    contents = [{
+        "role": "user" if message.get("sender") == "customer" else "model",
+        "parts": [{"text": str(message.get("body") or "")}],
+    } for message in history[-14:]]
+    if not contents or contents[-1].get("role") != "user":
+        contents.append({"role": "user", "parts": [{"text": user_message}]})
+    else:
+        contents[-1] = {"role": "user", "parts": [{"text": user_message}]}
+    contents.insert(0, {"role": "user", "parts": [{"text": context_text}]})
+    payload = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.45, "maxOutputTokens": 420, "responseMimeType": "application/json"},
+    }
+    request = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key},
+        method="POST",
+    )
+    try:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(request, timeout=25, context=ssl_context) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    raw = "\n".join(part.get("text", "") for part in parts if part.get("text")).strip()
+    parsed = _parse_gemini_json(raw) if raw else None
+    if not parsed or not isinstance(parsed.get("reply"), str) or not parsed["reply"].strip():
+        return None
+    return parsed
+
+
+def _coverage_value_supported(fields: list[dict[str, Any]], value: str, user_message: str) -> bool:
+    normalized_value = " ".join(sorted(_normalized_words(value)))
+    if not normalized_value:
+        return False
+    for field in fields:
+        if field.get("type") != "choice":
+            continue
+        if any(" ".join(sorted(_normalized_words(str(option)))) == normalized_value for option in field.get("options") or []):
+            return False
+    normalized_message = " ".join(sorted(_normalized_words(user_message)))
+    if re.search(r"\b\d{5}\b", value) and re.search(r"\b\d{5}\b", user_message):
+        return True
+    known_locations = [" ".join(sorted(_normalized_words(city))) for city in CITY_COORDINATES]
+    if any(location and location in normalized_value and location in normalized_message for location in known_locations):
+        return True
+    location_markers = {"ciudad", "municipio", "postal", "codigo", "cp", "direccion", "ubicacion", "provincia"}
+    return bool(location_markers & set(_normalized_words(user_message))) and bool(set(_normalized_words(value)) & set(_normalized_words(user_message)))
+
+
+def _apply_gemini_updates(fields: list[dict[str, Any]], intake: dict[str, Any], analysis: dict[str, Any], user_message: str = "") -> tuple[dict[str, Any], set[str]]:
+    updated = dict(intake)
+    accepted: set[str] = set()
+    raw_updates = analysis.get("updates")
+    if not isinstance(raw_updates, list):
+        return updated, accepted
+    for update in raw_updates:
+        if not isinstance(update, dict):
+            continue
+        key = update.get("field")
+        if not isinstance(key, str):
+            continue
+        field = next((candidate for candidate in fields if candidate.get("key") == key), None)
+        if not field or not _field_is_visible(field, updated):
+            continue
+        raw_value = update.get("value")
+        if raw_value is None:
+            continue
+        if key == COVERAGE_FIELD_KEY and not _coverage_value_supported(fields, str(raw_value), user_message):
+            continue
+        value = _coerce_field(field, raw_value if field.get("type") == "color" else str(raw_value), updated)
+        if value is not None:
+            updated[key] = value
+            accepted.add(key)
+    return updated, accepted
+
+
+def _resolve_coverage(conn: Any, tenant_id: UUID, value: Any, settings: Settings) -> tuple[dict[str, Any], dict[str, Any]]:
+    profile = conn.execute(
+        "select city, service_radius_km, display_name from public.horekia_tenant_profiles where tenant_id = %s",
+        (tenant_id,),
+    ).fetchone() or {}
+    requested_location = str(value)
+    coverage = check_service_coverage(profile.get("city"), requested_location, profile.get("service_radius_km"))
+    if coverage.get("reason") == "location_not_found":
+        normalized_location = _normalize_location_with_gemini(requested_location, settings)
+        if normalized_location:
+            normalized_coverage = check_service_coverage(profile.get("city"), normalized_location, profile.get("service_radius_km"))
+            if normalized_coverage["status"] != "unavailable":
+                normalized_coverage["destination_input"] = requested_location
+                normalized_coverage["destination_normalized"] = normalized_location
+                normalized_coverage["resolved_by"] = "gemini"
+                coverage = normalized_coverage
+    return coverage, profile
+
+
+def _coverage_unavailable_reply(coverage: dict[str, Any]) -> str:
+    if coverage.get("reason") == "origin_not_configured":
+        return "Todavía no puedo validar el radio de actuación porque la ciudad de la empresa no está configurada en sus datos."
+    return "No he podido localizar esa ubicación. Indícame una ciudad o un código postal de cinco cifras para comprobar si está dentro de nuestro radio de actuación."
+
+
+def _outside_coverage_reply(coverage: dict[str, Any], profile: dict[str, Any]) -> str:
+    distance = f"{coverage['distance_km']:.1f}".replace(".", ",")
+    radius = f"{float(coverage['radius_km']):.1f}".rstrip("0").rstrip(".").replace(".", ",")
+    business_name = profile.get("display_name") or "la empresa"
+    contact_name = f"**{business_name}**" if business_name != "la empresa" else business_name
+    return (
+        f"Lo siento, en esta ocasión no podemos preparar el presupuesto porque la ubicación está a **{distance} km** "
+        f"de nuestra ciudad y nuestro radio de acción es de **{radius} km**.\n\n"
+        f"Si necesitas realizar el servicio en esa dirección, puedes contactar directamente con {contact_name} "
+        "para consultar si es posible valorar una excepción."
+    )
+
+
+def _reply_requests_coverage(reply: str) -> bool:
+    """Detect when Gemini asks again for a location already validated by the server."""
+
+    normalized = reply.casefold()
+    coverage_terms = (
+        "ubicación", "ubicacion", "ciudad", "municipio", "localidad", "dirección", "direccion",
+        "código postal", "codigo postal", "prestar el servicio", "realizar el servicio",
+    )
+    request_terms = (
+        "dime", "indica", "indicarme", "señala", "dónde", "donde", "en qué", "en que",
+        "qué ciudad", "que ciudad", "deberíamos", "podrías",
+    )
+    return any(term in normalized for term in coverage_terms) and any(term in normalized for term in request_terms)
+
+
+def _quote_completion_reply(service_name: str, *, authenticated_customer: bool, email_sent: bool) -> str:
+    if authenticated_customer and email_sent:
+        return (
+            "Perfecto, ya lo tenemos todo.\n\n"
+            "He hecho un cálculo aproximado y te he enviado por correo electrónico el presupuesto. "
+            "También puedes verlo en tu perfil de usuario, en **Mis presupuestos**.\n\n"
+            "Espero haberte ayudado. ¡Un abrazo!"
+        )
+    if authenticated_customer:
+        return (
+            f"Perfecto, ya lo tenemos todo. He preparado el presupuesto de {service_name}, "
+            "pero la empresa todavía debe revisar la configuración del correo antes de poder enviártelo."
+        )
+    return (
+        "Perfecto, ya lo tenemos todo. He hecho un cálculo aproximado y tu presupuesto está preparado. "
+        "Para recibirlo por correo electrónico y verlo en **Mis presupuestos**, solo falta crear tu contraseña."
+    )
+
+
+def _hours_review_note(fields: list[dict[str, Any]], intake: dict[str, Any], accepted_keys: set[str]) -> str | None:
+    """Set expectations when the customer supplies an estimated labour duration."""
+
+    for field in fields:
+        key = str(field.get("key") or "")
+        if key not in accepted_keys or key not in intake:
+            continue
+        searchable = f"{key} {field.get('label') or ''} {field.get('unit') or ''}".casefold()
+        if "hora" not in searchable:
+            continue
+        try:
+            amount = Decimal(str(intake[key]))
+            display = format(amount.normalize(), "f")
+        except (ArithmeticError, ValueError, TypeError):
+            display = str(intake[key])
+        unit = "hora" if display == "1" else "horas"
+        return (
+            f"Perfecto, tomo como referencia **{display} {unit}**. Estas horas se revisarán con el estudio técnico "
+            "y con las características reales del trabajo antes de confirmar el presupuesto.\n\n"
+            "Recuerda que este presupuesto es orientativo: el alcance, las horas y el importe final "
+            "podrán variar después del estudio de viabilidad y de las condiciones del contrato."
+        )
+    return None
+
+
+def _append_hours_review_note(reply: str, note: str | None) -> str:
+    if not note or "orientativo" in reply.casefold():
+        return reply
+    return f"{reply}\n\n{note}"
+
+
+def _conversational_turn(
+    conn: Any,
+    *,
+    tenant_id: UUID,
+    request_id: UUID,
+    request: dict[str, Any],
+    service: dict[str, Any],
+    blueprint: dict[str, Any],
+    fields: list[dict[str, Any]],
+    intake: dict[str, Any],
+    payload: ChatMessage,
+    analysis: dict[str, Any],
+    authenticated_customer: bool,
+    settings: Settings,
+) -> dict[str, Any]:
+    hinted_field = next((field for field in fields if field.get("key") == payload.field_key), None) if payload.field_key else None
+    if analysis.get("needs_confirmation") is True:
+        reply = str(analysis.get("reply") or "Creo que hay una pequeña incongruencia entre lo que necesitas y la opción seleccionada. ¿Quieres continuar con esta opción o prefieres revisar la selección?").strip()
+        current_field = hinted_field or _next_missing(fields, intake)
+        conn.execute(
+            "insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)",
+            (tenant_id, request_id, reply, Jsonb({"source": "gemini_conversation", "needs_confirmation": True})),
+        )
+        return {
+            "request_id": str(request_id),
+            "status": "in_progress",
+            "reply": reply,
+            "field": _public_field(current_field, intake, blueprint["items"]),
+            "intake_data": intake,
+        }
+    updated_intake, accepted_keys = _apply_gemini_updates(fields, intake, analysis, payload.content)
+    if hinted_field and hinted_field.get("key") not in accepted_keys and _field_is_visible(hinted_field, updated_intake):
+        direct_value = _coerce_field(hinted_field, payload.content, updated_intake)
+        if direct_value is not None:
+            updated_intake[hinted_field["key"]] = direct_value
+            accepted_keys.add(hinted_field["key"])
+
+    pending_product_field = None
+    for field in fields:
+        if field.get("key") not in accepted_keys:
+            continue
+        product_options = field.get("product_options") if isinstance(field.get("product_options"), dict) else {}
+        option = updated_intake.get(field.get("key"))
+        allowed_products = product_options.get(str(option), []) if option is not None else []
+        if not isinstance(allowed_products, list) or not allowed_products:
+            continue
+        if payload.product_sku:
+            if payload.product_sku not in [str(value) for value in allowed_products]:
+                reply = "Ese modelo no está disponible para la opción que has elegido. Selecciona uno de los modelos mostrados."
+                conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "product_catalog"})))
+                return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, updated_intake, blueprint["items"]), "intake_data": updated_intake}
+            updated_intake[f"{field['key']}_product_sku"] = payload.product_sku
+        else:
+            pending_product_field = field
+
+    coverage = None
+    profile: dict[str, Any] = {}
+    coverage_field = next((field for field in fields if field.get("key") == COVERAGE_FIELD_KEY), None)
+    # Reuse the already validated location on every turn. Previously coverage
+    # was only resolved when the location was accepted in the current message,
+    # so the LLM could ask for it again later in the same conversation.
+    if COVERAGE_FIELD_KEY in updated_intake:
+        coverage, profile = _resolve_coverage(conn, tenant_id, updated_intake[COVERAGE_FIELD_KEY], settings)
+    if COVERAGE_FIELD_KEY in accepted_keys and coverage:
+        if coverage["status"] == "unavailable":
+            reply = _coverage_unavailable_reply(coverage)
+            conn.execute("update public.horekia_requests set intake_data = %s, updated_at = now() where tenant_id = %s and id = %s", (Jsonb(updated_intake), tenant_id, request_id))
+            conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
+            return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(coverage_field, updated_intake, blueprint["items"]), "intake_data": updated_intake, "coverage": coverage}
+        if coverage["status"] == "outside_radius":
+            reply = _outside_coverage_reply(coverage, profile)
+            conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'closed', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(updated_intake), Jsonb([]), tenant_id, request_id))
+            conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(coverage), Jsonb({"source": "coverage_check"})))
+            return {"request_id": str(request_id), "status": "closed", "reply": reply, "field": None, "intake_data": updated_intake, "coverage": coverage, "eligible": False}
+
+    if coverage and coverage.get("status") == "within_radius" and accepted_keys == {COVERAGE_FIELD_KEY}:
+        reply = "Perfecto, podemos prestar el servicio en esa ubicación. Ahora cuéntame qué te gustaría hacer o qué problema quieres resolver."
+        missing = [field for field in fields if field.get("required") and field.get("key") not in updated_intake and _field_is_visible(field, updated_intake)]
+        conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(updated_intake), Jsonb([field["key"] for field in missing]), tenant_id, request_id))
+        conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"coverage": coverage, "source": "gemini_conversation"}), Jsonb({"source": "coverage_check"})))
+        return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": None, "intake_data": updated_intake, "coverage": coverage, "eligible": True}
+
+    hours_note = _hours_review_note(fields, updated_intake, accepted_keys)
+    missing = [field for field in fields if field.get("required") and field.get("key") not in updated_intake and _field_is_visible(field, updated_intake)]
+    next_field = pending_product_field
+    if not next_field and missing:
+        if coverage_field and coverage_field.get("key") not in updated_intake:
+            next_field = coverage_field
+        else:
+            requested_next = analysis.get("next_field")
+            next_field = next((field for field in missing if field.get("key") == requested_next), None)
+            next_field = next_field or missing[0]
+    if next_field:
+        reply = str(analysis.get("reply") or _field_question(next_field, 0, updated_intake, blueprint["items"]))
+        if COVERAGE_FIELD_KEY in updated_intake and next_field.get("key") != COVERAGE_FIELD_KEY and _reply_requests_coverage(reply):
+            reply = _field_question(next_field, 0, updated_intake, blueprint["items"])
+        if next_field.get("key") == COVERAGE_FIELD_KEY:
+            reply_lower = reply.casefold()
+            if not any(token in reply_lower for token in ("ubicación", "ubicacion", "ciudad", "municipio", "código postal", "codigo postal", "dónde", "donde")):
+                reply = "Perfecto, lo tengo en cuenta. Para comprobar que podemos prestar el servicio, ¿en qué ciudad o código postal deberíamos realizarlo?"
+        reply = _append_hours_review_note(reply, hours_note)
+        conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(updated_intake), Jsonb([field["key"] for field in missing]), tenant_id, request_id))
+        structured_data = {"field": next_field["key"], "extracted_fields": sorted(accepted_keys), "source": "gemini_conversation"}
+        if coverage:
+            structured_data["coverage"] = coverage
+        conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb(structured_data), Jsonb({"source": "gemini_conversation"})))
+        response = {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(next_field, updated_intake, blueprint["items"]), "intake_data": updated_intake}
+        if coverage:
+            response["coverage"] = coverage
+            response["eligible"] = True
+        return response
+
+    try:
+        tenant_settings = conn.execute("select currency, tax_rate, configuration_version from public.horekia_tenant_settings where tenant_id = %s", (tenant_id,)).fetchone()
+        quote, calculation = _create_quote(conn, tenant_id, request_id, service["id"], blueprint, updated_intake, tenant_settings)
+    except CalculationError as exc:
+        reply = f"Necesito revisar un dato antes de calcular: {exc}"
+        conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'needs_review', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(updated_intake), Jsonb([]), tenant_id, request_id))
+        conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "calculator", "error": str(exc)})))
+        return {"request_id": str(request_id), "status": "needs_review", "reply": reply, "field": None, "intake_data": updated_intake}
+    email_sent = False
+    email_error = None
+    if authenticated_customer:
+        email_sent, email_error = _deliver_quote_email(conn, settings=settings, tenant_id=tenant_id, request_id=request_id, quote=quote, calculation=calculation, service=service)
+        reply = _quote_completion_reply(service["name"], authenticated_customer=True, email_sent=email_sent)
+    else:
+        reply = _quote_completion_reply(service["name"], authenticated_customer=False, email_sent=False)
+    reply = _append_hours_review_note(reply, hours_note)
+    conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(updated_intake), Jsonb([]), tenant_id, request_id))
+    conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"quote_id": str(quote["id"]), "calculation": calculation, "source": "gemini_conversation"}), Jsonb({"source": "calculator"})))
+    response = {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": updated_intake}
+    if authenticated_customer:
+        response["email_sent"] = email_sent
+    else:
+        response["quote_available"] = True
+        response["quote_id"] = str(quote["id"])
+    return response
+
+
 def _next_missing(fields: list[dict[str, Any]], intake: dict[str, Any]) -> dict[str, Any] | None:
     return next((field for field in fields if field.get("required") and field["key"] not in intake and _field_is_visible(field, intake)), None)
 
 
-def _coerce_field(field: dict[str, Any], content: str, intake: dict[str, Any] | None = None) -> Any | None:
+def _coerce_field(field: dict[str, Any], content: Any, intake: dict[str, Any] | None = None) -> Any | None:
     field = _effective_field(field, intake)
-    value = content.strip()
+    value = content.strip() if isinstance(content, str) else content
     field_type = field.get("type")
     if field_type == "number":
         try:
@@ -446,12 +940,16 @@ def _coerce_field(field: dict[str, Any], content: str, intake: dict[str, Any] | 
         except Exception:
             return None
     if field_type == "boolean":
+        if not isinstance(value, str):
+            return None
         if value.lower() in {"sí", "si", "s", "yes", "true", "1"}:
             return True
         if value.lower() in {"no", "n", "false", "0"}:
             return False
         return None
     if field_type == "choice":
+        if not isinstance(value, str):
+            return None
         options = field.get("options") or []
         normalized = " ".join(sorted(_normalized_words(value)))
         exact = next((option for option in options if " ".join(sorted(_normalized_words(option))) == normalized), None)
@@ -460,6 +958,20 @@ def _coerce_field(field: dict[str, Any], content: str, intake: dict[str, Any] | 
         input_words = _normalized_words(value)
         matches = [option for option in options if _normalized_words(option) & input_words]
         return matches[0] if len(matches) == 1 else None
+    if field_type == "color":
+        if isinstance(value, dict):
+            allowed_keys = {"name", "system", "code", "hex", "rgb", "cmyk"}
+            clean = {key: value[key] for key in allowed_keys if key in value and value[key] not in (None, "", [])}
+            return clean or None
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                return _coerce_field(field, parsed, intake)
+            return {"name": value} if value else None
+        return None
     return value or None
 
 
@@ -547,7 +1059,7 @@ def _require_customer_session(conn: Any, tenant_id: UUID, token: str | None) -> 
 
 
 def _quote_response(quote: dict[str, Any], calculation: dict[str, Any]) -> dict[str, Any]:
-    return {"id": str(quote["id"]), "status": quote["status"], "currency": quote["currency"], "subtotal": str(quote["subtotal"]), "tax_amount": str(quote["tax_amount"]), "total": str(quote["total"]), "lines": calculation["lines"]}
+    return {"id": str(quote["id"]), "status": quote["status"], "currency": quote["currency"], "subtotal": str(quote["subtotal"]), "tax_amount": str(quote["tax_amount"]), "total": str(quote["total"]), "patterns": calculation.get("patterns", []), "lines": calculation["lines"]}
 
 
 def _deliver_quote_email(
@@ -737,7 +1249,7 @@ def customer_account(tenant_slug: str, customer_session: str | None = Header(def
             from public.horekia_quotes q
             join public.horekia_requests r on r.tenant_id = q.tenant_id and r.id = q.request_id
             left join public.horekia_job_types j on j.tenant_id = r.tenant_id and j.id = r.job_type_id
-            where q.tenant_id = %s and r.customer_id = %s
+            where q.tenant_id = %s and r.customer_id = %s and q.customer_deleted_at is null
             order by q.created_at desc
             """,
             (tenant["id"], customer["id"]),
@@ -786,6 +1298,36 @@ def request_quote_execution(tenant_slug: str, quote_id: UUID, customer_session: 
         return {"status": "accepted", "quote_id": str(quote_id), "message": "Hemos enviado tu solicitud a la empresa."}
 
 
+@router.delete("/tenants/{tenant_slug}/quotes/{quote_id}")
+def delete_customer_quote(tenant_slug: str, quote_id: UUID, customer_session: str | None = Header(default=None, alias="X-Customer-Session"), settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    """Hide a customer's quote from their account while preserving tenant history."""
+
+    with db_session(settings) as conn:
+        tenant = _tenant_by_slug(conn, tenant_slug)
+        customer = _require_customer_session(conn, tenant["id"], customer_session)
+        quote = conn.execute(
+            """
+            select q.id, q.status, q.request_id
+            from public.horekia_quotes q
+            join public.horekia_requests r on r.tenant_id = q.tenant_id and r.id = q.request_id
+            where q.tenant_id = %s and q.id = %s and r.customer_id = %s
+              and q.customer_deleted_at is null
+            """,
+            (tenant["id"], quote_id, customer["id"]),
+        ).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+        conn.execute(
+            "update public.horekia_quotes set customer_deleted_at = now(), updated_at = now() where tenant_id = %s and id = %s",
+            (tenant["id"], quote_id),
+        )
+        conn.execute(
+            "insert into public.horekia_quote_events (tenant_id, quote_id, event_type, payload) values (%s, %s, 'updated', %s)",
+            (tenant["id"], quote_id, Jsonb({"source": "public_customer", "action": "hide_quote", "customer_id": str(customer["id"]), "previous_status": quote["status"]})),
+        )
+        return {"status": "deleted", "quote_id": str(quote_id), "message": "El presupuesto se ha eliminado de tu cuenta."}
+
+
 @router.post("/tenants/{tenant_slug}/conversations", status_code=status.HTTP_201_CREATED)
 def start_conversation(tenant_slug: str, payload: ConversationStart, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
     with db_session(settings) as conn:
@@ -801,16 +1343,13 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
         customer_id = customer["id"]
         blueprint = _blueprint(conn, tenant["id"], service["id"])
         fields = _chat_fields(blueprint)
-        first_field = _next_missing(fields, {})
         opening = _opening_message(service, customer.get("name") or payload.customer_name)
-        if first_field:
-            opening += f"\n\n{_field_question(first_field, 0, {})}"
         request = conn.execute(
             "insert into public.horekia_requests (tenant_id, customer_id, job_type_id, status, intake_data, missing_fields, source) values (%s, %s, %s, 'new', %s, %s, 'chat') returning id, status, intake_data, missing_fields, created_at",
             (tenant["id"], customer_id, service["id"], Jsonb({}), Jsonb([field["key"] for field in fields if field.get("required")])),
         ).fetchone()
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant["id"], request["id"], opening, Jsonb({"service": service["slug"]}), Jsonb({"source": "service_blueprint"})))
-        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(first_field, {}, blueprint["items"]), "intake_data": {}, "status": request["status"]}
+        return {"request_id": str(request["id"]), "tenant": tenant, "service": service, "message": {"sender": "assistant", "body": opening}, "field": _public_field(COVERAGE_FIELD, {}, blueprint["items"]), "intake_data": {}, "status": request["status"]}
 
 
 @router.post("/conversations/{request_id}/account")
@@ -897,7 +1436,39 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
         blueprint = _blueprint(conn, tenant_id, request["job_type_id"])
         fields = _chat_fields(blueprint)
         intake = dict(request["intake_data"] or {})
+        # A location stored in intake_data has already passed the deterministic
+        # coverage check. Do not validate it again against the literal text of
+        # the next customer message, which could make a valid location vanish.
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body) values (%s, %s, 'customer', %s)", (tenant_id, request_id, payload.content))
+        if not settings.ai_mock and settings.gemini_api_key:
+            history = conn.execute(
+                "select sender, body from public.horekia_messages where tenant_id = %s and request_id = %s order by created_at desc limit 14",
+                (tenant_id, request_id),
+            ).fetchall()
+            analysis = _ask_gemini_conversation(
+                service=service,
+                blueprint=blueprint,
+                knowledge=_public_knowledge_context(conn, tenant_id, service),
+                history=list(reversed(history)),
+                intake=intake,
+                user_message=payload.content,
+                settings=settings,
+            )
+            if analysis:
+                return _conversational_turn(
+                    conn,
+                    tenant_id=tenant_id,
+                    request_id=request_id,
+                    request=request,
+                    service=service,
+                    blueprint=blueprint,
+                    fields=fields,
+                    intake=intake,
+                    payload=payload,
+                    analysis=analysis,
+                    authenticated_customer=authenticated_customer,
+                    settings=settings,
+                )
         field = next((item for item in fields if item.get("key") == payload.field_key), None) if payload.field_key else _next_missing(fields, intake)
         if field and not _field_is_visible(field, intake):
             field = _next_missing(fields, intake)
@@ -914,12 +1485,13 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                     return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(effective_field, intake, blueprint["items"]), "intake_data": intake}
             if value is None:
                 effective_field = _effective_field(field, intake)
+                contextual_field = _field_with_product_context(field, intake, blueprint["items"])
                 reply = _ask_gemini_public(
                     service_name=service["name"],
-                    field=effective_field,
+                    field=contextual_field,
                     user_message=payload.content,
                     settings=settings,
-                ) or _friendly_retry(field, intake)
+                ) or _field_question(contextual_field, 0, intake, blueprint["items"])
                 conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, provenance) values (%s, %s, 'assistant', %s, %s)", (tenant_id, request_id, reply, Jsonb({"source": "service_blueprint"})))
                 return {"request_id": str(request_id), "status": "in_progress", "reply": reply, "field": _public_field(field, intake, blueprint["items"]), "intake_data": intake}
             if field.get("key") == COVERAGE_FIELD_KEY:
@@ -961,13 +1533,17 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
             intake[field["key"]] = value
             if payload.product_sku and product_options:
                 intake[f"{field['key']}_product_sku"] = payload.product_sku
+            hours_note = _hours_review_note(fields, intake, {field["key"]})
+        else:
+            hours_note = None
         next_field = _next_missing(fields, intake)
         missing = [item["key"] for item in fields if item.get("required") and item["key"] not in intake and _field_is_visible(item, intake)]
         if next_field:
             numeric_prompt_index = sum(
                 1 for item in blueprint["fields"] if item.get("type") == "number" and item.get("key") in intake
             )
-            reply = _field_question(next_field, numeric_prompt_index, intake)
+            reply = _field_question(next_field, numeric_prompt_index, intake, blueprint["items"])
+            reply = _append_hours_review_note(reply, hours_note)
             conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'in_progress', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb(missing), tenant_id, request_id))
             structured_data = {"field": next_field["key"]}
             if coverage:
@@ -999,11 +1575,12 @@ def send_message(request_id: UUID, payload: ChatMessage, settings: Settings = De
                 service=service,
             )
             if email_sent:
-                reply = f"He preparado tu presupuesto de {service['name']} y te lo he enviado por email."
+                reply = _quote_completion_reply(service["name"], authenticated_customer=True, email_sent=True)
             else:
-                reply = f"He preparado tu presupuesto de {service['name']}, pero no he podido enviarlo por email todavía. La empresa debe revisar la configuración de correo antes de poder enviártelo."
+                reply = _quote_completion_reply(service["name"], authenticated_customer=True, email_sent=False)
         else:
-            reply = f"He preparado tu solicitud de presupuesto de {service['name']}. Para recibirla por email, solo falta crear una contraseña para tu cuenta."
+            reply = _quote_completion_reply(service["name"], authenticated_customer=False, email_sent=False)
+        reply = _append_hours_review_note(reply, hours_note)
         conn.execute("update public.horekia_requests set intake_data = %s, missing_fields = %s, status = 'quoted', updated_at = now() where tenant_id = %s and id = %s", (Jsonb(intake), Jsonb([]), tenant_id, request_id))
         conn.execute("insert into public.horekia_messages (tenant_id, request_id, sender, body, structured_data, provenance) values (%s, %s, 'assistant', %s, %s, %s)", (tenant_id, request_id, reply, Jsonb({"quote_id": str(quote["id"]), "calculation": calculation}), Jsonb({"source": "calculator"})))
         response = {"request_id": str(request_id), "status": "quoted", "reply": reply, "field": None, "intake_data": intake}

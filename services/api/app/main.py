@@ -1,27 +1,32 @@
 """FastAPI application entrypoint."""
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .backoffice import router as backoffice_router
+from .auth import router as backoffice_auth_router
 from .config import get_settings
 from .public import router as public_router
 
 app = FastAPI(title="Horekia API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8081",
-        "http://127.0.0.1:8081",
-        "http://localhost:8082",
-        "http://127.0.0.1:8082",
-    ],
+    allow_origins=get_settings().cors_origins,
     allow_credentials=False,
     allow_methods=["DELETE", "GET", "PATCH", "POST", "PUT"],
-    allow_headers=["Content-Type", "X-Customer-Session"],
+    allow_headers=["Content-Type", "X-Customer-Session", "X-Backoffice-Session"],
 )
+app.include_router(backoffice_auth_router)
 app.include_router(backoffice_router)
 app.include_router(public_router)
+
+_settings = get_settings()
+_media_root = Path(_settings.product_upload_dir).parent
+_media_root.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(_media_root), check_dir=False), name="media")
 
 
 @app.get("/healthz", tags=["system"])

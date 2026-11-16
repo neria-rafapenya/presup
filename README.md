@@ -14,6 +14,8 @@ Directorio de trabajo: `/Users/rafa_penya/presup`. La preparación de `/Users/ra
 
 La sesión actual puede escribir en `.git` para las operaciones locales necesarias. No se ha hecho push ni se han creado recursos remotos.
 
+El VPS de la POC mantiene Horekia separado de Cuinaria: se despliega en `/var/www/horekia/presup`, con `api.horekia.com`, `backoffice.horekia.com` y `app.horekia.com`; las credenciales permanecen fuera de Git.
+
 ## Documentación
 
 - [Decisiones](DECISIONES.md)
@@ -31,7 +33,7 @@ No copiar credenciales de otros proyectos. El `.env` local ya existe; en una cop
 
 ## Verificación actual
 
-La API, el backoffice y el chat se validan sin Docker; las migraciones y el aislamiento ya se probaron en el proyecto Supabase autorizado usando únicamente el prefijo `horekia_`. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable.
+La API, el backoffice y el chat se validan sin Docker; las migraciones y el aislamiento ya se probaron en el proyecto Supabase autorizado usando únicamente el prefijo `horekia_`. Consulta [fase-1.md](docs/fase-1.md) para el estado verificable. El backoffice requiere la sesión maestra de la POC.
 
 El backoffice tendrá un Wizard de onboarding por tenant: aparecerá automáticamente en el primer acceso mientras falte la configuración inicial y seguirá disponible desde el menú `Wizard` para reanudarlo o ejecutarlo de nuevo.
 

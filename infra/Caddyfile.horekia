@@ -1,0 +1,41 @@
+api.horekia.com {
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Robots-Tag "noindex, nofollow"
+        Strict-Transport-Security "max-age=31536000"
+    }
+    reverse_proxy 127.0.0.1:8010
+}
+
+backoffice.horekia.com {
+    encode zstd gzip
+    root * /var/www/horekia/presup/apps/backoffice/dist
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        X-Robots-Tag "noindex, nofollow"
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-cache"
+    }
+    try_files {path} /index.html
+    file_server
+}
+
+app.horekia.com {
+    encode zstd gzip
+    root * /var/www/horekia/presup/apps/chat/dist
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        X-Robots-Tag "noindex, nofollow"
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-cache"
+    }
+    try_files {path} /index.html
+    file_server
+}

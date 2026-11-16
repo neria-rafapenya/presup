@@ -8,6 +8,7 @@ POC. A future template designer can replace this with mapped placeholders.
 from datetime import datetime
 from io import BytesIO
 from typing import Any
+from xml.sax.saxutils import escape
 
 
 def _money(value: Any) -> str:
@@ -41,6 +42,31 @@ def _standard_pdf(*, tenant: dict[str, Any], customer: dict[str, Any], service: 
     story.append(Paragraph(f"<b>Cliente:</b> {customer.get('name') or 'Solicitante'} · {customer.get('email') or ''}", body))
     story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y')} · <b>Referencia:</b> {quote.get('id')}", body))
     story.append(Spacer(1, 7 * mm))
+    patterns = calculation.get("patterns", [])
+    if patterns:
+        story.append(Paragraph("Patrones y configuración", heading))
+        pattern_rows = [["Patrón", "Respuesta"]]
+        for pattern in patterns:
+            response = escape(str(pattern.get("response") or ""))
+            if pattern.get("unit"):
+                response = f"{response} {escape(str(pattern['unit']))}"
+            if pattern.get("product_name"):
+                response += f"<br/><font color='#61736a'>Producto: {escape(str(pattern['product_name']))}</font>"
+            pattern_rows.append([escape(str(pattern.get("label") or pattern.get("key") or "Patrón")), response])
+        pattern_table = Table(pattern_rows, colWidths=[92 * mm, 93 * mm], repeatRows=1)
+        pattern_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef7f0")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17332d")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd8d1")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(pattern_table)
+        story.append(Spacer(1, 6 * mm))
+    story.append(Paragraph("Desglose económico", heading))
     rows = [["Concepto", "Cantidad", "Precio", "Importe"]]
     for line in calculation.get("lines", []):
         rows.append([

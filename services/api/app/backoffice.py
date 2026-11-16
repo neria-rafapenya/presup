@@ -3,6 +3,7 @@
 import io
 import json
 import logging
+from pathlib import Path
 import ssl
 import urllib.error
 import urllib.request
@@ -17,12 +18,13 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
+from .auth import require_backoffice_session
 from .calculator import CalculationError, calculate_quote
 from .db import POC_TENANT_ID, db_session
 from .documentation import BACKOFFICE_HELP_CONTEXT
 from .geo import COVERAGE_FIELD_KEY
 
-router = APIRouter(prefix="/api/v1/backoffice", tags=["backoffice"])
+router = APIRouter(prefix="/api/v1/backoffice", tags=["backoffice"], dependencies=[Depends(require_backoffice_session)])
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +79,7 @@ class SectorPackCreate(BaseModel):
 class BlueprintField(BaseModel):
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
     label: str = Field(min_length=1, max_length=160)
-    type: str = Field(pattern=r"^(text|number|boolean|choice|date|file)$")
+    type: str = Field(pattern=r"^(text|number|boolean|choice|color|date|file)$")
     required: bool = False
     options: list[str] = Field(default_factory=list, max_length=100)
     unit: str | None = Field(default=None, max_length=40)
@@ -88,6 +90,7 @@ class BlueprintField(BaseModel):
     depends_on: dict[str, Any] | None = None
     visible_when: dict[str, Any] | None = None
     product_options: dict[str, list[str]] | None = None
+    color_config: dict[str, Any] | None = None
 
 
 class BlueprintItem(BaseModel):
@@ -139,6 +142,28 @@ class KnowledgeImport(BaseModel):
 class KnowledgeEntryPatch(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     content: str = Field(max_length=10000)
+
+
+class ProductCreate(BaseModel):
+    sku: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{1,119}$")
+    name: str = Field(min_length=1, max_length=240)
+    description: str | None = Field(default=None, max_length=2000)
+    category_path: list[str] = Field(min_length=1, max_length=10)
+    brand: str | None = Field(default=None, max_length=160)
+    model: str | None = Field(default=None, max_length=160)
+    material: str | None = Field(default=None, max_length=240)
+    grammage_g: Decimal | None = Field(default=None, ge=0, le=100000)
+    colors: list[str] = Field(default_factory=list, max_length=50)
+    sizes: list[str] = Field(default_factory=list, max_length=50)
+    image_url: str | None = Field(default=None, max_length=2000)
+    unit: str = Field(default="unidad", max_length=40)
+    base_price: Decimal | None = Field(default=None, ge=0)
+    currency: str = Field(default="EUR", min_length=3, max_length=3)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProductPatch(ProductCreate):
+    pass
 
 
 class DocumentationChatMessage(BaseModel):
@@ -651,14 +676,27 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
                 controller_index = next((index for index, candidate in enumerate(payload.fields) if candidate.key == controller_code), -1)
                 if not isinstance(controller_code, str) or not isinstance(expected_value, str) or not expected_value.strip():
                     raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe indicar field y equals.")
-                if controller_index < 0 or payload.fields[controller_index].type != "choice":
-                    raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe depender de una pregunta de opción existente.")
+                if controller_index < 0 or payload.fields[controller_index].type not in {"choice", "boolean"}:
+                    raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe depender de una pregunta de opción o Sí/No existente.")
                 if controller_index >= field_index:
                     raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» debe depender de una pregunta anterior.")
-                if expected_value not in payload.fields[controller_index].options:
+                controller = payload.fields[controller_index]
+                valid_values = controller.options if controller.type == "choice" else ["true", "false"]
+                if expected_value.casefold() not in {str(value).casefold() for value in valid_values}:
                     raise HTTPException(status_code=422, detail=f"La condición de «{field.label}» usa una opción inexistente: {expected_value}")
 
-            catalog_skus = {item.sku for item in payload.items}
+            product_rows = conn.execute(
+                """
+                select sku
+                from public.horekia_items
+                where tenant_id = %s and status = 'active'
+                  and metadata ? 'catalog_product'
+                """,
+                (POC_TENANT_ID,),
+            ).fetchall()
+            catalog_skus = {row["sku"] for row in product_rows if row["sku"]}
+            # Keep service concepts available to deterministic rules. Product
+            # associations, however, are resolved from the tenant catalog.
             for field in payload.fields:
                 if not field.product_options:
                     continue
@@ -786,6 +824,225 @@ def save_service_blueprint(job_type_id: UUID, payload: ServiceBlueprint, setting
         logger.exception("No se pudo guardar el patrón del servicio %s", job_type_id)
         if "duplicate key" in str(exc).lower():
             raise HTTPException(status_code=409, detail="Hay códigos repetidos en el patrón del servicio") from exc
+        raise database_error(exc) from exc
+
+
+def _product_metadata(payload: ProductCreate) -> dict[str, Any]:
+    metadata = dict(payload.metadata)
+    catalog_product = dict(metadata.get("catalog_product") or {})
+    catalog_product.update(
+        {
+            "category_path": [part.strip() for part in payload.category_path if part.strip()],
+            "brand": payload.brand,
+            "model": payload.model,
+            "material": payload.material,
+            "grammage_g": float(payload.grammage_g) if payload.grammage_g is not None else None,
+            "colors": [color.strip() for color in payload.colors if color.strip()],
+            "sizes": [size.strip() for size in payload.sizes if size.strip()],
+            "image_url": payload.image_url,
+        }
+    )
+    metadata["catalog_product"] = {key: value for key, value in catalog_product.items() if value not in (None, "", [], {})}
+    return metadata
+
+
+def _product_view(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    catalog = metadata.get("catalog_product") if isinstance(metadata.get("catalog_product"), dict) else {}
+    return {
+        "id": str(row["id"]),
+        "sku": row["sku"],
+        "name": row["name"],
+        "description": row.get("description"),
+        "category_path": catalog.get("category_path") or [],
+        "brand": catalog.get("brand"),
+        "model": catalog.get("model"),
+        "material": catalog.get("material"),
+        "grammage_g": catalog.get("grammage_g"),
+        "colors": catalog.get("colors") or [],
+        "sizes": catalog.get("sizes") or [],
+        "image_url": catalog.get("image_url"),
+        "unit": row["unit"],
+        "base_price": row["base_price"],
+        "currency": row["currency"],
+        "metadata": metadata,
+    }
+
+
+@router.get("/products")
+def list_products(settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            rows = conn.execute(
+                """
+                select id, sku, name, description, unit, base_price, currency, metadata
+                from public.horekia_items
+                where tenant_id = %s and status = 'active'
+                  and metadata ? 'catalog_product'
+                order by name, sku
+                """,
+                (POC_TENANT_ID,),
+            ).fetchall()
+            return [_product_view(row) for row in rows]
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+@router.post("/products", status_code=status.HTTP_201_CREATED)
+def create_product(payload: ProductCreate, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        metadata = _product_metadata(payload)
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                insert into public.horekia_items
+                  (tenant_id, job_type_id, sku, name, description, unit, base_price, currency, metadata)
+                values (%s, null, %s, %s, %s, %s, %s, %s, %s)
+                returning id, sku, name, description, unit, base_price, currency, metadata
+                """,
+                (POC_TENANT_ID, payload.sku, payload.name.strip(), payload.description, payload.unit, payload.base_price, payload.currency.upper(), Jsonb(metadata)),
+            ).fetchone()
+            return _product_view(row)
+    except Exception as exc:
+        if "duplicate key" in str(exc).lower():
+            raise HTTPException(status_code=409, detail=f"Ya existe un producto con el SKU «{payload.sku}».") from exc
+        raise database_error(exc) from exc
+
+
+@router.patch("/products/{product_id}")
+def update_product(product_id: UUID, payload: ProductPatch, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        metadata = _product_metadata(payload)
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                update public.horekia_items
+                set sku = %s, name = %s, description = %s, unit = %s,
+                    base_price = %s, currency = %s, metadata = %s, updated_at = now()
+                where tenant_id = %s and id = %s and status = 'active'
+                  and metadata ? 'catalog_product'
+                returning id, sku, name, description, unit, base_price, currency, metadata
+                """,
+                (payload.sku, payload.name.strip(), payload.description, payload.unit, payload.base_price, payload.currency.upper(), Jsonb(metadata), POC_TENANT_ID, product_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Producto no encontrado")
+            return _product_view(row)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if "duplicate key" in str(exc).lower():
+            raise HTTPException(status_code=409, detail=f"Ya existe un producto con el SKU «{payload.sku}».") from exc
+        raise database_error(exc) from exc
+
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: UUID, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                select id, sku
+                from public.horekia_items
+                where tenant_id = %s and id = %s and status = 'active'
+                  and metadata ? 'catalog_product'
+                """,
+                (POC_TENANT_ID, product_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Producto no encontrado")
+            schemas = conn.execute(
+                """
+                select fields
+                from public.horekia_intake_schemas
+                where tenant_id = %s and status = 'active'
+                """,
+                (POC_TENANT_ID,),
+            ).fetchall()
+            for schema in schemas:
+                for field in schema.get("fields") or []:
+                    mappings = field.get("product_options") if isinstance(field, dict) else None
+                    if isinstance(mappings, dict) and any(row["sku"] in values for values in mappings.values() if isinstance(values, list)):
+                        raise HTTPException(status_code=409, detail="No se puede eliminar este producto porque está asociado a un patrón activo. Desasócialo primero.")
+            archived = conn.execute(
+                """
+                update public.horekia_items
+                set status = 'archived', updated_at = now()
+                where tenant_id = %s and id = %s
+                returning id, sku, status
+                """,
+                (POC_TENANT_ID, product_id),
+            ).fetchone()
+            return {"id": str(archived["id"]), "sku": archived["sku"], "status": archived["status"]}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise database_error(exc) from exc
+
+
+def _product_image_path(settings: Settings, product_id: UUID, extension: str) -> Path:
+    tenant_dir = Path(settings.product_upload_dir) / str(POC_TENANT_ID)
+    return tenant_dir / f"{product_id}{extension}"
+
+
+def _product_image_url(settings: Settings, product_id: UUID, extension: str) -> str:
+    return f"{settings.media_public_base_url.rstrip('/')}/products/{POC_TENANT_ID}/{product_id}{extension}"
+
+
+@router.post("/products/{product_id}/image")
+def upload_product_image(product_id: UUID, file: UploadFile = File(...), settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    """Store a product image in the POC server directory and link it to the catalog row."""
+
+    filename = (file.filename or "").lower()
+    extensions = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+    extension = extensions.get(file.content_type or "")
+    if extension is None:
+        extension = ".jpg" if filename.endswith((".jpg", ".jpeg")) else ".png" if filename.endswith(".png") else ".webp" if filename.endswith(".webp") else None
+    if extension is None:
+        raise HTTPException(status_code=415, detail="La imagen debe ser PNG, JPG o WEBP")
+    content = file.file.read(5 * 1024 * 1024 + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="La imagen está vacía")
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="La imagen no puede superar 5 MB")
+    try:
+        with db_session(settings) as conn:
+            row = conn.execute(
+                """
+                select id, metadata
+                from public.horekia_items
+                where tenant_id = %s and id = %s and status = 'active'
+                  and metadata ? 'catalog_product'
+                """,
+                (POC_TENANT_ID, product_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Producto no encontrado")
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            catalog = dict(metadata.get("catalog_product") or {})
+            old_image_url = catalog.get("image_url")
+            if isinstance(old_image_url, str):
+                for old_extension in (".png", ".jpg", ".webp"):
+                    if old_image_url.endswith(f"{product_id}{old_extension}"):
+                        _product_image_path(settings, product_id, old_extension).unlink(missing_ok=True)
+            target = _product_image_path(settings, product_id, extension)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            catalog["image_url"] = _product_image_url(settings, product_id, extension)
+            metadata["catalog_product"] = catalog
+            updated = conn.execute(
+                """
+                update public.horekia_items
+                set metadata = %s, updated_at = now()
+                where tenant_id = %s and id = %s
+                returning id, sku, name, description, unit, base_price, currency, metadata
+                """,
+                (Jsonb(metadata), POC_TENANT_ID, product_id),
+            ).fetchone()
+            return _product_view(updated)
+    except HTTPException:
+        raise
+    except Exception as exc:
         raise database_error(exc) from exc
 
 
@@ -989,6 +1246,18 @@ def _operations_blueprint(conn: Any, job_type_id: UUID) -> dict[str, Any]:
         """,
         (POC_TENANT_ID, job_type_id),
     ).fetchall()
+    products = conn.execute(
+        """
+        select sku, name, description, unit, base_price, currency, metadata
+        from public.horekia_items
+        where tenant_id = %s and status = 'active'
+                  and metadata ? 'catalog_product'
+        order by name
+        """,
+        (POC_TENANT_ID,),
+    ).fetchall()
+    known_skus = {str(item.get("sku")) for item in items if item.get("sku")}
+    items = [*items, *[product for product in products if str(product.get("sku")) not in known_skus]]
     rules = conn.execute(
         """
         select code, kind, priority, definition

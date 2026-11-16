@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { createElement, type ReactNode, useEffect, useRef, useState } from "react";
+import { createElement, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "documentation" | "designer" | "bulk-services" | "requests" | "quotes";
+type Screen = "wizard" | "dashboard" | "company" | "knowledge" | "documentation" | "designer" | "bulk-services" | "products" | "requests" | "quotes";
 
 type Summary = {
   tenant: { name: string; slug: string; default_locale: string };
@@ -41,6 +41,7 @@ type HelpMessage = { role: "user" | "assistant"; content: string };
 type RequestSummary = { id: string; status: string; source: string; intake_data: Record<string, unknown>; missing_fields: string[]; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null; customer_email?: string | null; quote_id?: string | null; quote_status?: string | null; quote_total?: number | string | null; quote_currency?: string | null };
 type QuoteSummary = { id: string; request_id?: string | null; status: string; currency: string; subtotal: number | string; tax_amount: number | string; total: number | string; valid_until?: string | null; created_at: string; updated_at: string; job_type_name?: string | null; customer_name?: string | null };
 type VisibilityCondition = { field: string; equals: string };
+type ColorConfig = { source?: "product" | "tenant_palette" | "free" | "mixed"; systems?: string[]; allow_custom?: boolean; palette?: Array<{ name: string; system?: string; code?: string; hex?: string; rgb?: number[]; cmyk?: number[] }> };
 type DesignerDragSection = "field" | "item" | "rule";
 type TenantProfile = {
   legal_name: string | null;
@@ -68,12 +69,15 @@ type TenantProfile = {
   metadata: Record<string, unknown>;
 };
 type DependentOptions = { field: string; options_by_value: Record<string, string[]> };
-type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string; example?: string; depends_on?: DependentOptions; visible_when?: VisibilityCondition; product_options?: Record<string, string[]> };
+type BlueprintField = { key: string; label: string; type: string; required: boolean; options: string[]; unit?: string; min?: number; max?: number; help_text?: string; example?: string; depends_on?: DependentOptions; visible_when?: VisibilityCondition; product_options?: Record<string, string[]>; color_config?: ColorConfig };
 type BlueprintItem = { sku: string; name: string; description?: string; unit: string; base_price?: number; currency: string; metadata: Record<string, unknown> };
+type Product = { id: string; sku: string; name: string; description?: string | null; category_path: string[]; brand?: string | null; model?: string | null; material?: string | null; grammage_g?: number | null; colors: string[]; sizes: string[]; image_url?: string | null; unit: string; base_price?: number | string | null; currency: string; metadata: Record<string, unknown> };
+type ProductDraft = Omit<Product, "id" | "metadata"> & { metadata?: Record<string, unknown> };
 type CatalogAttribute = { label: string; value: string };
 type BlueprintRule = { code: string; kind: string; priority: number; definition: Record<string, unknown> };
 type ServiceBlueprint = { version?: number; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }> };
 type ServiceImportData = { serviceSlug: string; serviceName?: string; serviceDescription?: string; sectorPackSlug?: string; fields: BlueprintField[]; items: BlueprintItem[]; rules: BlueprintRule[]; measures: Array<{ code: string; expression: Record<string, unknown> }>; replace?: boolean };
+type BackofficeUser = { email: string; role: string; tenant_name?: string };
 type ServiceTemplate = "print" | "renovation" | "mechanic" | "catering" | "cleaning" | "gardening" | "photography" | "transport" | "it_support" | "consulting" | "training" | "maintenance";
 
 let bulkDraftSequence = 0;
@@ -81,6 +85,7 @@ const newBulkServiceDraft = (): BulkServiceDraft => ({ id: ++bulkDraftSequence, 
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const WIZARD_STORAGE_KEY = "horekia.backoffice.onboarding.completed";
+const BACKOFFICE_SESSION_KEY = "horekia.backoffice.session";
 const latoRootStyle = { fontFamily: "Lato", fontSize: 15 } as any;
 
 function slugify(value: string) {
@@ -138,6 +143,7 @@ function routeFromPath(pathname: string): AppRoute | null {
   if (path === "/company") return { screen: "company" };
   if (path === "/services") return { screen: "wizard" };
   if (path === "/knowledge") return { screen: "knowledge" };
+  if (path === "/products") return { screen: "products" };
   if (path === "/documentation") return { screen: "documentation" };
   const designerPageMatch = path.match(/^\/designer\/page\/(\d+)$/);
   if (designerPageMatch) return { screen: "designer", page: Math.max(1, Number(designerPageMatch[1])) };
@@ -159,11 +165,24 @@ function routePath(screen: Screen, serviceId?: string, page = 1): string {
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const isMultipart = typeof FormData !== "undefined" && options?.body instanceof FormData;
+  const session = typeof window !== "undefined" ? window.localStorage.getItem(BACKOFFICE_SESSION_KEY) : null;
   const response = await fetch(`${API_URL}${path}`, {
-    headers: isMultipart ? options?.headers : { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    headers: isMultipart
+      ? { ...(options?.headers ?? {}), ...(session ? { "X-Backoffice-Session": session } : {}) }
+      : { "Content-Type": "application/json", ...(session ? { "X-Backoffice-Session": session } : {}), ...(options?.headers ?? {}) },
     ...options,
   });
-  if (!response.ok) throw new Error(`API ${response.status}`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.json() as { detail?: unknown };
+      detail = typeof payload.detail === "string" ? payload.detail : payload.detail ? JSON.stringify(payload.detail) : "";
+    } catch {
+      // Some proxy/server errors are returned as plain text.
+      try { detail = await response.text(); } catch { detail = ""; }
+    }
+    throw new Error(`API ${response.status}${detail ? `: ${detail}` : ""}`);
+  }
   return response.json() as Promise<T>;
 }
 
@@ -181,12 +200,16 @@ export default function App() {
   const [wizardResumeStep, setWizardResumeStep] = useState(0);
   const [knowledgeSummary, setKnowledgeSummary] = useState<KnowledgeSummary>({ total: 0, by_kind: [] });
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [requests, setRequests] = useState<RequestSummary[]>([]);
   const [quotes, setQuotes] = useState<QuoteSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [helpOpenRequest, setHelpOpenRequest] = useState(0);
+  const [authUser, setAuthUser] = useState<BackofficeUser | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -212,12 +235,13 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextServices, nextSectorPacks, nextKnowledgeSummary, nextKnowledgeEntries, nextRequests, nextQuotes] = await Promise.all([
+      const [nextSummary, nextServices, nextSectorPacks, nextKnowledgeSummary, nextKnowledgeEntries, nextProducts, nextRequests, nextQuotes] = await Promise.all([
         api<Summary>("/api/v1/backoffice/summary"),
         api<JobType[]>("/api/v1/backoffice/job-types"),
         api<SectorPack[]>("/api/v1/backoffice/service-types"),
         api<KnowledgeSummary>("/api/v1/backoffice/knowledge/summary"),
         api<KnowledgeEntry[]>("/api/v1/backoffice/knowledge/entries"),
+        api<Product[]>("/api/v1/backoffice/products"),
         api<RequestSummary[]>("/api/v1/backoffice/requests"),
         api<QuoteSummary[]>("/api/v1/backoffice/quotes"),
       ]);
@@ -228,6 +252,7 @@ export default function App() {
       setSectorPacks(nextSectorPacks);
       setKnowledgeSummary(nextKnowledgeSummary);
       setKnowledgeEntries(nextKnowledgeEntries);
+      setProducts(nextProducts);
       setRequests(nextRequests);
       setQuotes(nextQuotes);
     } catch {
@@ -235,6 +260,36 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const bootstrapAuth = async () => {
+    const session = typeof window !== "undefined" ? window.localStorage.getItem(BACKOFFICE_SESSION_KEY) : null;
+    if (!session) {
+      setAuthChecking(false);
+      return;
+    }
+    try {
+      const user = await api<BackofficeUser>("/api/v1/backoffice/auth/me");
+      setAuthUser(user);
+      await load();
+    } catch {
+      if (typeof window !== "undefined") window.localStorage.removeItem(BACKOFFICE_SESSION_KEY);
+      setAuthUser(null);
+      setAuthError("La sesión ha caducado. Vuelve a iniciar sesión.");
+    } finally {
+      setAuthChecking(false);
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    setAuthError(null);
+    const result = await api<{ session: string; user: BackofficeUser }>("/api/v1/backoffice/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    if (typeof window !== "undefined") window.localStorage.setItem(BACKOFFICE_SESSION_KEY, result.session);
+    setAuthUser(result.user);
+    await load();
   };
 
   const saveProfile = async (nextProfile: TenantProfile) => {
@@ -273,7 +328,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    void load();
+    void bootstrapAuth();
   }, []);
 
   useEffect(() => {
@@ -448,6 +503,68 @@ export default function App() {
     }
   };
 
+  const createProduct = async (draft: ProductDraft): Promise<Product | null> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await api<Product>("/api/v1/backoffice/products", { method: "POST", body: JSON.stringify(draft) });
+      setProducts((current) => [...current, created].sort((left, right) => left.name.localeCompare(right.name)));
+      return created;
+    } catch {
+      setError("No se ha podido crear el producto. Revisa que el SKU no esté repetido.");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateProduct = async (productId: string, draft: ProductDraft): Promise<Product | null> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api<Product>(`/api/v1/backoffice/products/${productId}`, { method: "PATCH", body: JSON.stringify(draft) });
+      setProducts((current) => current.map((product) => product.id === productId ? updated : product).sort((left, right) => left.name.localeCompare(right.name)));
+      return updated;
+    } catch {
+      setError("No se ha podido actualizar el producto.");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const uploadProductImage = async (productId: string, file: File): Promise<Product | null> => {
+    const form = new FormData();
+    form.append("file", file);
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api<Product>(`/api/v1/backoffice/products/${productId}/image`, { method: "POST", body: form });
+      setProducts((current) => current.map((product) => product.id === productId ? updated : product));
+      return updated;
+    } catch {
+      setError("No se ha podido subir la imagen. Usa PNG, JPG o WEBP de hasta 5 MB.");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteProduct = async (productId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/api/v1/backoffice/products/${productId}`, { method: "DELETE" });
+      setProducts((current) => current.filter((product) => product.id !== productId));
+      return true;
+    } catch {
+      setError("No se ha podido eliminar el producto. Comprueba que no esté asociado a un patrón.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const calculateRequestQuote = async (requestId: string) => {
     setSaving(true);
     setError(null);
@@ -553,9 +670,10 @@ export default function App() {
       await api(`/api/v1/backoffice/job-types/${jobTypeId}/blueprint`, { method: "PUT", body: JSON.stringify(blueprint) });
       await load();
       return true;
-    } catch {
-      setError("No se ha podido guardar el patrón del servicio.");
-      return false;
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : "No se ha podido guardar el patrón del servicio.";
+      setError(message);
+      throw caughtError;
     } finally {
       setSaving(false);
     }
@@ -577,7 +695,20 @@ export default function App() {
     setDesignerService(null);
     navigate(designerReturnScreen === "designer" ? "wizard" : designerReturnScreen);
   };
-  const handleLogout = () => setError("El cierre de sesión estará disponible cuando integremos la autenticación.");
+  const handleLogout = async () => {
+    try { await api("/api/v1/backoffice/auth/logout", { method: "POST" }); } catch { /* token may already be expired */ }
+    if (typeof window !== "undefined") window.localStorage.removeItem(BACKOFFICE_SESSION_KEY);
+    setAuthUser(null);
+    setSummary(null);
+    setProfile(null);
+  };
+
+  if (authChecking) {
+    return <View style={styles.authShell}><ActivityIndicator color="#258269" size="large" /><Text style={styles.authLoading}>Comprobando acceso…</Text></View>;
+  }
+  if (!authUser) {
+    return <BackofficeLogin error={authError} onLogin={login} />;
+  }
 
   return (
     <View style={[styles.shell, Platform.OS === "web" ? latoRootStyle : null]}>
@@ -590,9 +721,10 @@ export default function App() {
         <View style={styles.nav}>
           <NavButton label="Dashboard" active={screen === "dashboard"} onPress={() => navigate("dashboard")} />
           <NavButton label="Empresa" active={screen === "company"} onPress={() => navigate("company")} />
-          <Text style={[styles.navGroupLabel, (screen === "designer" || screen === "knowledge") && styles.navGroupLabelActive]}>Servicios y fichas</Text>
+          <Text style={[styles.navGroupLabel, (screen === "designer" || screen === "knowledge" || screen === "products") && styles.navGroupLabelActive]}>Servicios y fichas</Text>
           <View style={styles.subnav}>
-            <NavButton label="Diseñador de servicios" child active={screen === "designer" || screen === "bulk-services"} onPress={() => { setDesignerReturnScreen("wizard"); navigate("designer", designerService?.id ?? undefined); }} />
+            <NavButton label="Diseñador de servicios" child active={screen === "designer" || screen === "bulk-services"} onPress={() => { setDesignerReturnScreen("wizard"); setDesignerService(null); navigate("designer"); }} />
+            <NavButton label="Productos" child active={screen === "products"} onPress={() => navigate("products")} />
             <NavButton label="Base de conocimiento" child active={screen === "knowledge"} onPress={() => navigate("knowledge")} />
           </View>
           <NavButton label="Peticiones" active={screen === "requests"} onPress={() => navigate("requests")} />
@@ -616,7 +748,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} sectorPacks={sectorPacks} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onCreateSectorPack={createSectorPack} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} products={products} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} sectorPacks={sectorPacks} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onCreateSectorPack={createSectorPack} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -645,6 +777,7 @@ export default function App() {
               {screen === "knowledge" ? (
                 <KnowledgePage knowledgeSummary={knowledgeSummary} knowledgeEntries={knowledgeEntries} services={services} onImport={importKnowledge} onUpdate={updateKnowledgeEntry} onDelete={deleteKnowledgeEntry} onImportService={importServiceDefinition} saving={saving} />
               ) : null}
+              {screen === "products" ? <ProductsPage products={products} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} onUploadImage={uploadProductImage} saving={saving} /> : null}
               {screen === "documentation" ? <Documentation /> : null}
               {screen === "bulk-services" ? <BulkServicesPage services={services} sectorPacks={sectorPacks} onCreateMany={createServicesBulk} onBack={() => navigate("designer")} saving={saving} /> : null}
               {screen === "requests" ? <RequestsPage requests={requests} onCalculate={calculateRequestQuote} onStatus={updateRequestStatus} saving={saving} /> : null}
@@ -656,6 +789,30 @@ export default function App() {
       <DocumentationHelpChat openRequest={helpOpenRequest} onSend={askDocumentation} onOpenDocumentation={() => navigate("documentation")} />
     </View>
   );
+}
+
+function BackofficeLogin({ error, onLogin }: { error: string | null; onLogin: (email: string, password: string) => Promise<void> }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [sending, setSending] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const submit = async () => {
+    if (!email.trim() || !password) { setLocalError("Introduce tu email y contraseña."); return; }
+    setSending(true);
+    setLocalError(null);
+    try { await onLogin(email, password); } catch { setLocalError("Email o contraseña incorrectos."); } finally { setSending(false); }
+  };
+  return <View style={styles.authShell}>
+    <View style={styles.authCard}>
+      <Text style={styles.authKicker}>HOREKIA</Text>
+      <Text style={styles.authTitle}>Acceso al backoffice</Text>
+      <Text style={styles.authText}>Inicia sesión para gestionar la empresa, los servicios y los presupuestos.</Text>
+      <Field label="Email" hint="El email de la cuenta maestra del backoffice." value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+      <Field label="Contraseña" hint="La contraseña privada de la instalación." value={password} onChangeText={setPassword} secureTextEntry />
+      {(error || localError) ? <Text style={styles.error}>{localError ?? error}</Text> : null}
+      <Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={sending}><Text style={styles.primaryLabel}>{sending ? "Entrando…" : "Iniciar sesión"}</Text></Pressable>
+    </View>
+  </View>;
 }
 
 function NavButton({ label, active, onPress, child = false }: { label: string; active: boolean; onPress: () => void; child?: boolean }) {
@@ -831,7 +988,7 @@ function Documentation() {
     </DocumentationSection>
 
     <DocumentationSection number="2" title="Qué información debe cargarse">
-      <DocumentationBullet title="Productos y materiales" text="Baldosas, sanitarios, griferías, pinturas, piezas, servicios de mano de obra o extras. Los productos pueden incluir unidad y precio base." />
+      <DocumentationBullet title="Productos y materiales" text="Baldosas, sanitarios, griferías, pinturas, piezas, servicios de mano de obra o extras. Los productos pueden incluir unidad, precio base e imagen. La imagen se sube como archivo; si falta, se muestra noimage.png." />
       <DocumentationBullet title="Categorías" text="Agrupaciones como Material de suelo, Sanitarios, Mano de obra o Extras." />
       <DocumentationBullet title="Patrones comerciales" text="Cómo suele venderse un servicio, qué preguntas conviene hacer y en qué orden pedir la información." />
       <DocumentationBullet title="Políticas" text="Garantías, pagos, plazos, desplazamientos, validez de presupuestos y condiciones de aceptación." />
@@ -852,9 +1009,9 @@ function Documentation() {
       <Text style={styles.codeBlock}>kind,title,content,code,category,unit,base_price,currency</Text>
       <Text style={styles.documentationText}>Valores admitidos para kind: product, category, sales_pattern, policy, faq, document y other. Las columnas adicionales se conservan como metadatos.</Text>
       <Text style={styles.documentationText}>Para productos se recomienda completar code, category, unit, base_price y currency. El precio debe ser numérico, sin el símbolo de moneda.</Text>
-      <Text style={styles.documentationText}>Para crear o ampliar un servicio usa el bloque Importar patrón de servicio. Ese CSV utiliza service_slug y record_type con valores service, field, item, product, rule o measure. Las filas se fusionan por code con el patrón existente.</Text>
+      <Text style={styles.documentationText}>Para crear o ampliar un servicio usa el bloque Importar patrón de servicio. Ese CSV utiliza service_slug y record_type con valores service, field, item, rule o measure. Las filas se fusionan por code con el patrón existente. Los productos se crean y mantienen desde el menú Productos; el patrón solo conserva sus SKU dentro de product_options.</Text>
       <Text style={styles.codeBlock}>service_slug,record_type,order,code,title,content,type,options,required,unit,min,max,example,base_price,currency,priority,rule_kind,definition,expression,metadata,depends_on,visible_when,product_options</Text>
-      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, catálogo, reglas, medidas, opciones, límites, ejemplos, metadatos, dependencias y condiciones de visibilidad. Un product puede guardar en metadata.catalog_product la categoría, marca, modelo, gramaje, colores, tallas e imagen. product_options asocia esos SKU a las opciones de una pregunta y abre una galería de modelos en el chat. En la fila service puedes usar metadata como {`{"sector_pack":"imprenta"}`} para clasificarlo. En depends_on puedes indicar qué pregunta anterior controla las opciones disponibles. En visible_when puedes hacer que una pregunta aparezca solo con una respuesta concreta, por ejemplo {`{"field":"format_type","equals":"Personalizado"}`}. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
+      <Text style={styles.documentationText}>Desde el Diseñador puedes exportar el servicio completo. El CSV incluye el orden de las preguntas, conceptos facturables, reglas, medidas, opciones, límites, ejemplos, dependencias y condiciones de visibilidad. product_options asocia los SKU del menú Productos a las opciones de una pregunta y abre una galería de modelos en el chat. En la fila service puedes usar metadata como {`{"sector_pack":"imprenta"}`} para clasificarlo. En depends_on puedes indicar qué pregunta anterior controla las opciones disponibles. En visible_when puedes hacer que una pregunta aparezca solo con una respuesta concreta, por ejemplo {`{"field":"format_type","equals":"Personalizado"}`}. Al volver a importarlo puedes activar Reemplazar el patrón completo para eliminar también los elementos que ya no estén en el archivo.</Text>
     </DocumentationSection>
 
     <DocumentationSection number="5" title="Ejemplo de producto">
@@ -920,7 +1077,7 @@ Catálogo:
 
 Regla:
 - floor_material_by_area = superficie_suelo × precio de Baldosa gres Brooklyn`}</Text>
-      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos, product para productos concretos, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code. Para una pregunta dependiente añade la columna depends_on con un JSON que incluya field y options_by_value. Para asociar modelos a una opción añade product_options con un JSON de opciones y SKU. Para mostrar una pregunta solo en un caso concreto usa visible_when, por ejemplo {`{"field":"format_type","equals":"Personalizado"}`}, y activa Debe contestarse. En una importación completa, usa Reemplazar el patrón completo para retirar preguntas antiguas o duplicadas.</Text>
+      <Text style={styles.documentationText}>También puedes importar estos bloques mediante el CSV de patrón de servicio. Usa record_type=field para preguntas, item para conceptos facturables, rule para reglas y measure para medidas. El servicio se identifica mediante service_slug y las filas se fusionan por code. Para una pregunta dependiente añade la columna depends_on con un JSON que incluya field y options_by_value. Para asociar modelos a una opción añade product_options con un JSON de opciones y SKU de Productos. Para mostrar una pregunta solo en un caso concreto usa visible_when, por ejemplo {`{"field":"format_type","equals":"Personalizado"}`}, y activa Debe contestarse. En una importación completa, usa Reemplazar el patrón completo para retirar preguntas antiguas o duplicadas.</Text>
     </DocumentationDocumentSection>
   </View>;
 }
@@ -1233,7 +1390,7 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
     if (!record.code) return { error: `La fila ${recordType} necesita un código interno en code.` };
     if (recordType === "field") {
       const fieldType = record.response_type || record.value_type || record.type || "text";
-      if (!["text", "number", "choice", "boolean", "date", "file"].includes(fieldType)) return { error: `Tipo de pregunta no admitido para ${record.code}: ${fieldType}.` };
+      if (!["text", "number", "choice", "color", "boolean", "date", "file"].includes(fieldType)) return { error: `Tipo de pregunta no admitido para ${record.code}: ${fieldType}.` };
       const options = (record.options || "").split(/[|;]/).map((option) => option.trim()).filter(Boolean);
       const min = record.min ? Number(record.min.replace(",", ".")) : undefined;
       const max = record.max ? Number(record.max.replace(",", ".")) : undefined;
@@ -1265,8 +1422,18 @@ function parseServiceCsv(text: string): { data?: ServiceImportData; error?: stri
           product_options = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, Array.isArray(value) ? value.map(String) : []]));
         } catch { return { error: `El product_options de ${record.code} no contiene JSON válido.` }; }
       }
-      fields.push({ key: record.code, label: record.title || record.code, type: fieldType, required: ["true", "1", "si", "sí", "yes"].includes((record.required || "").toLowerCase()), options, unit: record.unit || undefined, min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, help_text: record.content || undefined, example: record.example || undefined, ...(depends_on ? { depends_on } : {}), ...(visible_when ? { visible_when } : {}), ...(product_options ? { product_options } : {}) });
-    } else if (recordType === "item" || recordType === "product") {
+      let color_config: ColorConfig | undefined;
+      if (record.color_config) {
+        try {
+          const parsed = JSON.parse(record.color_config) as unknown;
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("no es un objeto");
+          color_config = parsed as ColorConfig;
+        } catch { return { error: `El color_config de ${record.code} no contiene JSON válido.` }; }
+      }
+      fields.push({ key: record.code, label: record.title || record.code, type: fieldType, required: ["true", "1", "si", "sí", "yes"].includes((record.required || "").toLowerCase()), options, unit: record.unit || undefined, min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, help_text: record.content || undefined, example: record.example || undefined, ...(depends_on ? { depends_on } : {}), ...(visible_when ? { visible_when } : {}), ...(product_options ? { product_options } : {}), ...(color_config ? { color_config } : {}) });
+    } else if (recordType === "product") {
+      return { error: `La fila ${record.code} es un producto del catálogo. Créalo primero desde el menú Productos y deja en este CSV solo su SKU dentro de product_options.` };
+    } else if (recordType === "item") {
       const price = record.base_price ? Number(record.base_price.replace(",", ".")) : undefined;
       if (record.base_price && !Number.isFinite(price)) return { error: `Precio no válido para ${record.code}.` };
       let metadata: Record<string, unknown> = {};
@@ -1355,6 +1522,61 @@ function Services({ services, sectorPacks, onCreate, onDelete, onDesignService, 
       <DeleteServiceModal service={serviceToDelete} onClose={() => setServiceToDelete(null)} onConfirm={async () => { if (serviceToDelete && await onDelete(serviceToDelete.id)) setServiceToDelete(null); }} saving={saving} />
     </View>
   );
+}
+
+const emptyProductDraft = (): ProductDraft => ({ sku: "", name: "", description: "", category_path: [], brand: "", model: "", material: "", grammage_g: undefined, colors: [], sizes: [], image_url: "", unit: "unidad", base_price: undefined, currency: "EUR" });
+
+function productToDraft(product: Product): ProductDraft {
+  return { sku: product.sku, name: product.name, description: product.description ?? "", category_path: product.category_path, brand: product.brand ?? "", model: product.model ?? "", material: product.material ?? "", grammage_g: product.grammage_g ?? undefined, colors: product.colors, sizes: product.sizes, image_url: product.image_url ?? "", unit: product.unit, base_price: product.base_price ?? undefined, currency: product.currency };
+}
+
+function ProductsPage({ products, onCreate, onUpdate, onDelete, onUploadImage, saving }: { products: Product[]; onCreate: (draft: ProductDraft) => Promise<Product | null>; onUpdate: (id: string, draft: ProductDraft) => Promise<Product | null>; onDelete: (id: string) => Promise<boolean>; onUploadImage: (id: string, file: File) => Promise<Product | null>; saving: boolean }) {
+  const [filter, setFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [editorProduct, setEditorProduct] = useState<Product | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const pageSize = 15;
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  const filtered = products.filter((product) => !normalizedFilter || `${product.name} ${product.sku} ${product.category_path.join(" ")} ${product.brand ?? ""} ${product.model ?? ""}`.toLocaleLowerCase().includes(normalizedFilter));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => setPage(1), [filter]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  return <View style={styles.operationsPage}>
+    <View style={styles.operationsIntro}><View style={styles.serviceSummaryRow}><View><Text style={styles.sectionTitle}>Productos</Text><Text style={styles.sectionText}>Catálogo reutilizable del tenant. Aquí se crean y mantienen los productos; los servicios solo los asocian a sus opciones.</Text></View><Pressable style={styles.primaryButton} onPress={() => { setEditorProduct(null); setEditorOpen(true); }} disabled={saving}><Text style={styles.primaryLabel}>Nuevo producto</Text></Pressable></View></View>
+    <View style={styles.panel}><TextInput style={styles.filterInput} value={filter} onChangeText={setFilter} placeholder="Filtrar por nombre, SKU, categoría o marca…" />{filtered.length ? <><View style={styles.tableHeader}><Text style={styles.tableHeaderLabel}>Producto</Text><Text style={styles.tableHeaderLabel}>Acciones</Text></View>{visible.map((product) => <View style={styles.tableRow} key={product.id}><View style={styles.tableMain}><Text style={styles.listTitle}>{product.name}</Text><Text style={styles.listMeta}>{product.sku} · {product.category_path.join(" / ") || "Sin categoría"}{product.brand ? ` · ${product.brand}` : ""}{product.base_price !== null && product.base_price !== undefined ? ` · ${formatMoney(product.base_price, product.currency)}/${product.unit}` : ""}</Text></View><View style={styles.serviceActions}><Pressable style={styles.smallButton} onPress={() => { setEditorProduct(product); setEditorOpen(true); }}><Text style={styles.smallButtonLabel}>Editar</Text></Pressable><Pressable style={styles.deleteButton} onPress={() => setProductToDelete(product)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View></View>)}<View style={styles.pagination}><Text style={styles.listMeta}>{filtered.length} producto(s){totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}</Text>{totalPages > 1 ? <View style={styles.paginationActions}><Pressable style={styles.paginationButton} onPress={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><Text style={styles.paginationLabel}>Anterior</Text></Pressable><Pressable style={styles.paginationButton} onPress={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><Text style={styles.paginationLabel}>Siguiente</Text></Pressable></View> : null}</View></> : <Text style={styles.emptyText}>{filter ? "No hay productos que coincidan con el filtro." : "Todavía no hay productos en el catálogo."}</Text>}</View>
+    <ProductModal visible={editorOpen} product={editorProduct} onClose={() => setEditorOpen(false)} onCreate={onCreate} onUpdate={onUpdate} onUploadImage={onUploadImage} saving={saving} />
+    <DeleteProductModal product={productToDelete} onClose={() => setProductToDelete(null)} onConfirm={async () => { if (productToDelete && await onDelete(productToDelete.id)) setProductToDelete(null); }} saving={saving} />
+  </View>;
+}
+
+function ProductModal({ visible, product, onClose, onCreate, onUpdate, onUploadImage, saving }: { visible: boolean; product: Product | null; onClose: () => void; onCreate: (draft: ProductDraft) => Promise<Product | null>; onUpdate: (id: string, draft: ProductDraft) => Promise<Product | null>; onUploadImage: (id: string, file: File) => Promise<Product | null>; saving: boolean }) {
+  const [draft, setDraft] = useState<ProductDraft>(emptyProductDraft());
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { if (visible) { setDraft(product ? productToDraft(product) : emptyProductDraft()); setImageFile(null); setValidationError(null); } }, [visible, product]);
+  const update = (patch: Partial<ProductDraft>) => { setDraft((current) => ({ ...current, ...patch })); setValidationError(null); };
+  const submit = async () => {
+    if (!draft.sku.trim() || !/^[A-Za-z0-9][A-Za-z0-9_-]{1,119}$/.test(draft.sku.trim())) { setValidationError("El SKU es obligatorio y solo puede usar letras, números, guiones y guiones bajos."); return; }
+    if (!draft.name.trim()) { setValidationError("Escribe un nombre para el producto."); return; }
+    if (!draft.category_path.length || draft.category_path.every((part) => !part.trim())) { setValidationError("Indica al menos una categoría."); return; }
+    const cleanDraft: ProductDraft = { ...draft, sku: draft.sku.trim(), name: draft.name.trim(), description: draft.description?.trim() || null, category_path: draft.category_path.map((part) => part.trim()).filter(Boolean), brand: draft.brand?.trim() || null, model: draft.model?.trim() || null, material: draft.material?.trim() || null, colors: draft.colors.map((value) => value.trim()).filter(Boolean), sizes: draft.sizes.map((value) => value.trim()).filter(Boolean), image_url: draft.image_url?.trim() || null, currency: draft.currency.trim().toUpperCase() || "EUR" };
+    const saved = product ? await onUpdate(product.id, cleanDraft) : await onCreate(cleanDraft);
+    if (!saved) return;
+    if (imageFile) {
+      const withImage = await onUploadImage(saved.id, imageFile);
+      if (!withImage) return;
+    }
+    onClose();
+  };
+  const imageUrl = draft.image_url || `${API_URL}/media/products/noimage.png`;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><ScrollView style={styles.modalCard} contentContainerStyle={styles.modalScrollContent}><View style={styles.modalHeader}><Text style={styles.panelTitle}>{product ? "Editar producto" : "Nuevo producto"}</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.wizardText}>Este producto quedará disponible para asociarlo a opciones de cualquier servicio del tenant.</Text><View style={styles.formGrid}><Field label="SKU" hint="Identificador único del producto. Ejemplo: gildan-5000-negro." value={draft.sku} onChangeText={(sku) => update({ sku })} editable={!product} /><Field label="Nombre" hint="Nombre que verá el técnico y, si se selecciona, el cliente." value={draft.name} onChangeText={(name) => update({ name })} /></View><Field label="Ruta de categorías" hint="Separa los niveles con >. Ejemplo: Imprenta > Textil > Camisetas." value={draft.category_path.join(" > ")} onChangeText={(value) => update({ category_path: value.split(/>|\//).map((part) => part.trim()).filter(Boolean) })} /><Field label="Descripción" value={draft.description ?? ""} onChangeText={(description) => update({ description })} multiline /><View style={styles.formGrid}><Field label="Marca" value={draft.brand ?? ""} onChangeText={(brand) => update({ brand })} /><Field label="Modelo" value={draft.model ?? ""} onChangeText={(model) => update({ model })} /></View><View style={styles.formGrid}><Field label="Material" value={draft.material ?? ""} onChangeText={(material) => update({ material })} /><Field label="Gramaje (g)" value={draft.grammage_g === undefined ? "" : String(draft.grammage_g)} keyboardType="decimal-pad" onChangeText={(value) => update({ grammage_g: parsePriceInput(value) })} /></View><View style={styles.formGrid}><Field label="Colores disponibles" hint="Escribe los valores separados por comas." value={draft.colors.join(", ")} onChangeText={(value) => update({ colors: value.split(",") })} /><Field label="Tallas disponibles" hint="Escribe los valores separados por comas." value={draft.sizes.join(", ")} onChangeText={(value) => update({ sizes: value.split(",") })} /></View><View style={styles.formGrid}><UnitSelector value={draft.unit} onChange={(unit) => update({ unit })} /><Field label="Precio base" hint="Precio orientativo del producto. Las reglas deterministas son las que calculan el presupuesto." value={formatPriceInput(draft.base_price ?? undefined)} keyboardType="decimal-pad" onChangeText={(value) => update({ base_price: parsePriceInput(value) })} /></View><View style={styles.productImageEditor}><Text style={styles.fieldLabel}>Imagen del producto</Text><Text style={styles.fieldHint}>Sube PNG, JPG o WEBP de hasta 5 MB. Si no subes ninguna, se mostrará noimage.png.</Text>{Platform.OS === "web" ? createElement("img", { src: imageUrl, alt: draft.name || "Producto sin imagen", style: styles.productPreviewImage }) : <View style={styles.productImagePlaceholder}><Text style={styles.productImageLabel}>Sin imagen</Text></View>}<Pressable style={styles.secondaryButton} onPress={() => imageInputRef.current?.click()} disabled={saving}><Text style={styles.secondaryLabel}>{imageFile ? "Cambiar imagen" : "Subir imagen"}</Text></Pressable>{imageFile ? <Text style={styles.listMeta}>Archivo seleccionado: {imageFile.name}</Text> : null}{Platform.OS === "web" ? createElement("input", { ref: imageInputRef, type: "file", accept: "image/png,image/jpeg,image/webp", style: { display: "none" }, onChange: (event: { currentTarget: HTMLInputElement }) => { const file = event.currentTarget.files?.[0] ?? null; setImageFile(file); } }) : null}</View>{validationError ? <Text style={styles.error}>{validationError}</Text> : null}<View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : product ? "Guardar cambios" : "Crear producto"}</Text></Pressable></View></ScrollView></View></Modal>;
+}
+
+function DeleteProductModal({ product, onClose, onConfirm, saving }: { product: Product | null; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean }) {
+  return <Modal visible={Boolean(product)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar producto</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{product?.name}</Text><Text style={styles.wizardText}>El producto se archivará y dejará de aparecer como opción para nuevos patrones. Si está asociado a un patrón activo, primero tendrás que desasociarlo.</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer desde el catálogo.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
 function ServiceTable({ services, onDesign, onDelete, saving, emptyText, page, onPageChange }: { services: JobType[]; onDesign: (service: JobType) => void; onDelete: (service: JobType) => void; saving: boolean; emptyText: string; page?: number; onPageChange?: (page: number) => void }) {
@@ -1532,7 +1754,7 @@ function SectorPackModal({ visible, onClose, onCreate, saving }: { visible: bool
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Nuevo tipo de servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.wizardText}>Crea una categoría superior para agrupar servicios del negocio.</Text><View style={styles.formGrid}><Field label="Nombre" hint="Ejemplo: Imprenta, Taller de coches o Empresa de reformas." value={draft.name} onChangeText={(name) => setDraft({ ...draft, name, slug: slugify(name) })} /><Field label="Slug automático" value={draft.slug} editable={false} onChangeText={() => undefined} /></View><Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />{validationError ? <Text style={styles.error}>{validationError}</Text> : null}<View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={saving || !draft.name.trim() || !draft.slug}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Crear tipo"}</Text></Pressable></View></View></View></Modal>;
 }
 
-function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; onClose: () => void; onOpenHelp: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
+function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; products: Product[]; onClose: () => void; onOpenHelp: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
   const [draft, setDraft] = useState<ServiceBlueprint>(emptyBlueprint());
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
@@ -1558,6 +1780,7 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   const fieldEditorIds = useRef<string[]>([]);
   const nextFieldEditorId = useRef(0);
   const saveInFlightRef = useRef(false);
+  const draftRef = useRef<ServiceBlueprint>(emptyBlueprint());
 
   const createFieldEditorId = () => `field-editor-${nextFieldEditorId.current++}`;
   const resetFieldEditorIds = (fields: BlueprintField[]) => {
@@ -1581,6 +1804,7 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
       const normalizedBlueprint = { ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] };
       originalBlueprintRef.current = cloneBlueprint(normalizedBlueprint);
       setDraft(normalizedBlueprint);
+      draftRef.current = normalizedBlueprint;
       resetFieldEditorIds(normalizedBlueprint.fields);
       setRuleCards(toEditableRules(normalizedBlueprint.rules));
       setMeasuresText(JSON.stringify(normalizedBlueprint.measures, null, 2));
@@ -1593,6 +1817,10 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   // onLoad is recreated by the parent when saving; that must not reload the
   // blueprint or show the initial loading overlay again.
   }, [visible, service.id]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     if (!scrollTarget) return;
@@ -1620,16 +1848,45 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
 
   const markDesignerDirty = () => { setDesignerDirty(true); setSaveMessage(null); };
   const updateField = (index: number, patch: Partial<BlueprintField>) => { markDesignerDirty(); setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) }); };
-  const updateItem = (index: number, patch: Partial<BlueprintItem>) => { markDesignerDirty(); setDraft({ ...draft, items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }); };
-  const updateItemAttributes = (index: number, attributes: CatalogAttribute[]) => { const item = draft.items[index]; updateItem(index, { metadata: { ...item.metadata, attributes } }); };
-  const addItemAttribute = (index: number) => { const item = draft.items[index]; updateItemAttributes(index, [...readCatalogAttributes(item), { label: "", value: "" }]); };
-  const updateItemAttribute = (index: number, attributeIndex: number, patch: Partial<CatalogAttribute>) => { const item = draft.items[index]; const attributes = readCatalogAttributes(item).map((attribute, currentIndex) => currentIndex === attributeIndex ? { ...attribute, ...patch } : attribute); updateItemAttributes(index, attributes); };
-  const removeItemAttribute = (index: number, attributeIndex: number) => { const item = draft.items[index]; updateItemAttributes(index, readCatalogAttributes(item).filter((_, currentIndex) => currentIndex !== attributeIndex)); };
-  const updateItemName = (index: number, name: string) => {
+  const updateItem = (index: number, patch: Partial<BlueprintItem>) => {
+    markDesignerDirty();
+    setDraft((current) => ({ ...current, items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }));
+  };
+  const updateItemAttributes = (index: number, attributes: CatalogAttribute[]) => {
+    markDesignerDirty();
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, metadata: { ...item.metadata, attributes } } : item),
+    }));
+  };
+  const addItemAttribute = (index: number) => {
     const item = draft.items[index];
-    const occupied = draft.items.filter((_, itemIndex) => itemIndex !== index).map((currentItem) => currentItem.sku);
-    const automaticSku = item.sku.startsWith("item_") || item.sku === internalKey(item.name, occupied);
-    updateItem(index, { name, ...(automaticSku ? { sku: internalKey(name, occupied) } : {}) });
+    updateItemAttributes(index, [...readCatalogAttributes(item), { label: "", value: "" }]);
+  };
+  const updateItemAttribute = (index: number, attributeIndex: number, patch: Partial<CatalogAttribute>) => {
+    markDesignerDirty();
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        const attributes = readCatalogAttributes(item).map((attribute, currentIndex) => currentIndex === attributeIndex ? { ...attribute, ...patch } : attribute);
+        return { ...item, metadata: { ...item.metadata, attributes } };
+      }),
+    }));
+  };
+  const removeItemAttribute = (index: number, attributeIndex: number) => {
+    const item = draft.items[index];
+    updateItemAttributes(index, readCatalogAttributes(item).filter((_, currentIndex) => currentIndex !== attributeIndex));
+  };
+  const updateItemName = (index: number, name: string) => {
+    markDesignerDirty();
+    setDraft((current) => {
+      const item = current.items[index];
+      if (!item) return current;
+      const occupied = current.items.filter((_, itemIndex) => itemIndex !== index).map((currentItem) => currentItem.sku);
+      const automaticSku = item.sku.startsWith("item_") || item.sku === internalKey(item.name, occupied);
+      return { ...current, items: current.items.map((currentItem, itemIndex) => itemIndex === index ? { ...currentItem, name, ...(automaticSku ? { sku: internalKey(name, occupied) } : {}) } : currentItem) };
+    });
   };
   const updateFieldLabel = (index: number, label: string) => {
     const field = draft.fields[index];
@@ -1639,7 +1896,7 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
     updateField(index, { label, key });
   };
   const toggleBlock = (blockKey: string) => setExpandedBlockKey((current) => current === blockKey ? null : blockKey);
-  const addField = (type = "text", label = "Nueva pregunta") => { markDesignerDirty(); if (fullScreen) selectDesignerSection("fields"); const index = draft.fields.length; const key = internalKey(label, draft.fields.map((field) => field.key)); const editorId = createFieldEditorId(); fieldEditorIds.current = [...fieldEditorIds.current, editorId]; setExpandedBlockKey(`field-${editorId}`); setDraft({ ...draft, fields: [...draft.fields, { key, label, type, required: true, options: [], example: exampleForType(type) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
+  const addField = (type = "text", label = "Nueva pregunta") => { markDesignerDirty(); if (fullScreen) selectDesignerSection("fields"); const index = draft.fields.length; const key = internalKey(label, draft.fields.map((field) => field.key)); const editorId = createFieldEditorId(); fieldEditorIds.current = [...fieldEditorIds.current, editorId]; setExpandedBlockKey(`field-${editorId}`); setDraft({ ...draft, fields: [...draft.fields, { key, label, type, required: true, options: [], example: exampleForType(type), ...(type === "color" ? { color_config: { source: "mixed", systems: ["RAL", "Pantone", "HEX", "RGB", "CMYK"], allow_custom: true } } : {}) }] }); setScrollTarget({ section: "field", index }); highlightNewBlock("field", index); };
   const removeField = (index: number) => { markDesignerDirty(); fieldEditorIds.current = fieldEditorIds.current.filter((_, fieldIndex) => fieldIndex !== index); setDraft({ ...draft, fields: draft.fields.filter((_, fieldIndex) => fieldIndex !== index) }); };
   const moveField = (index: number, direction: -1 | 1) => { const nextIndex = index + direction; if (nextIndex < 0 || nextIndex >= draft.fields.length) return; markDesignerDirty(); const fields = [...draft.fields]; const editorIds = [...fieldEditorIds.current]; [fields[index], fields[nextIndex]] = [fields[nextIndex], fields[index]]; [editorIds[index], editorIds[nextIndex]] = [editorIds[nextIndex], editorIds[index]]; fieldEditorIds.current = editorIds; const nextDraft = { ...draft, fields }; setDraft(nextDraft); void save("reorder", nextDraft); };
   const startDrag = (section: DesignerDragSection, index: number) => { setDraggedBlock({ section, index }); setDragOverBlock({ section, index }); };
@@ -1697,7 +1954,9 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
   const save = async (blockKey?: string, draftOverride?: ServiceBlueprint, ruleCardsOverride?: EditableRule[]) => {
     if (saveInFlightRef.current) return;
     saveInFlightRef.current = true;
-    const workingDraft = draftOverride ?? draft;
+    // Use the latest state snapshot. This avoids saving the previous render
+    // when the user edits a concept and immediately presses «Guardar».
+    const workingDraft = draftOverride ?? draftRef.current;
     setSavingBlockKey(blockKey ?? null);
     try {
       const rules = (ruleCardsOverride ?? ruleCards).map(({ definitionText, ...rule }) => ({ ...rule, definition: JSON.parse(definitionText) }));
@@ -1722,10 +1981,10 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
         const definition = rule.definition;
         if (typeof definition.field === "string" && !fieldCodes.has(definition.field)) throw new Error(`La regla «${rule.code}» referencia un campo inexistente: ${definition.field}`);
         if (typeof definition.quantity === "string" && !fieldCodes.has(definition.quantity) && !measureCodes.has(definition.quantity)) throw new Error(`La regla «${rule.code}» referencia una cantidad inexistente: ${definition.quantity}`);
-        if (typeof definition.item === "string" && !itemCodes.has(definition.item)) throw new Error(`La regla «${rule.code}» referencia un concepto inexistente: ${definition.item}`);
+        if (typeof definition.item === "string" && !itemCodes.has(definition.item) && !products.some((product) => product.sku === definition.item)) throw new Error(`La regla «${rule.code}» referencia un concepto inexistente: ${definition.item}`);
         if (definition.when && typeof definition.when === "object" && !Array.isArray(definition.when)) {
           Object.keys(definition.when).forEach((fieldCode) => {
-            if (!fieldCodes.has(fieldCode)) throw new Error(`La regla «${rule.code}» usa una condición inexistente: ${fieldCode}`);
+            if (!fieldCodes.has(fieldCode) && !measureCodes.has(fieldCode)) throw new Error(`La regla «${rule.code}» usa una condición inexistente: ${fieldCode}`);
           });
         }
       });
@@ -1804,6 +2063,8 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
         <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
           <View style={styles.modalHeader}><View><Text style={styles.designerContextTitle}>DISEÑAR SERVICIO</Text><Text style={styles.designerServiceName}>{service.name}</Text></View><Pressable style={styles.secondaryButton} onPress={exportService}><Text style={styles.secondaryLabel}>Exportar CSV</Text></Pressable></View>
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
+          {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
+          {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}
           <ScrollView ref={designerScrollRef} style={[styles.designerScroll, fullScreen && styles.designerFullScreenScroll]}>
             <View style={styles.templateChoices}>
               <TemplateSelector onSelect={loadTemplate} onReset={resetToOriginal} />
@@ -1811,22 +2072,21 @@ function ServiceDesignerModal({ visible, service, onClose, onOpenHelp, onLoad, o
             <View style={fullScreen && designerSection !== "fields" ? styles.hidden : null}><View style={styles.sectionHeaderRow}><Text style={styles.sectionLabel}>Preguntas y variables</Text>{savingBlockKey === "reorder" ? <Text style={styles.listMeta}>Guardando orden…</Text> : null}</View>
             <Text style={styles.listMeta}>Añade un bloque, cambia su nombre y define qué debe saber el chatbot. Usa el icono de puntos para arrastrar y reordenar; las flechas siguen disponibles como alternativa.</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar preguntas por nombre o código…" /> : null}
-            <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.fields.map((field, index) => <Animated.View {...dragCardProps("field", index)} onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, dragOverBlock?.section === "field" && dragOverBlock.index === index ? styles.dragOverCard : null, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${field.label} ${field.key}`) ? styles.hidden : null]} key={fieldEditorIds.current[index] ?? `field-editor-fallback-${index}`}><View style={styles.blockHeader}><DragHandle label="Arrastrar para reordenar esta pregunta" onDragStart={() => startDrag("field", index)} onDragEnd={endDrag} /><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}` ? "▲" : "▼"}</Text><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text></Pressable><Pressable onPress={() => moveField(index, -1)} disabled={saving}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)} disabled={saving}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`field-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `field-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeField(index)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`}><View style={styles.designerRow}><Field label="Código interno" hint="Se genera automáticamente a partir del nombre de la pregunta y lo utiliza el motor de reglas. No necesitas escribirlo." value={field.key} onChangeText={() => undefined} editable={false} /><Field label="Pregunta para el cliente" hint="Es la pregunta que verá la persona en el chatbot. Escríbela como se la dirías directamente." value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type, ...(type !== "choice" ? { depends_on: undefined, product_options: undefined } : {}) })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: gres, porcelánico, microcemento." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />}{field.type === "number" ? <UnitSelector value={field.unit || "m²"} onChange={(unit) => updateField(index, { unit })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>{field.type === "choice" ? <DependentOptionsEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(depends_on) => updateField(index, { depends_on })} /> : null}<ProductOptionsEditor field={field} items={draft.items} onChange={(product_options) => updateField(index, { product_options })} /><VisibleWhenEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice")} onChange={(visible_when) => updateField(index, { visible_when })} /><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</AnimatedCollapse></Animated.View>)}
+            <View style={styles.blockPalette}>{[["Texto", "text"], ["Número", "number"], ["Opción", "choice"], ["Color", "color"], ["Sí/No", "boolean"], ["Imagen", "file"]].map(([label, type]) => <Pressable style={styles.paletteButton} key={type} onPress={() => addField(type, label)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
+            {draft.fields.map((field, index) => <Animated.View {...dragCardProps("field", index)} onLayout={(event) => { fieldPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, dragOverBlock?.section === "field" && dragOverBlock.index === index ? styles.dragOverCard : null, highlightTarget?.section === "field" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${field.label} ${field.key}`) ? styles.hidden : null]} key={fieldEditorIds.current[index] ?? `field-editor-fallback-${index}`}><View style={styles.blockHeader}><DragHandle label="Arrastrar para reordenar esta pregunta" onDragStart={() => startDrag("field", index)} onDragEnd={endDrag} /><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}` ? "▲" : "▼"}</Text><Text style={styles.blockIndex}>{index + 1}</Text><Text style={styles.blockTitle}>{field.label || "Pregunta sin título"}</Text></Pressable><Pressable onPress={() => moveField(index, -1)} disabled={saving}><Text style={styles.reorderLabel}>↑</Text></Pressable><Pressable onPress={() => moveField(index, 1)} disabled={saving}><Text style={styles.reorderLabel}>↓</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`field-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `field-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeField(index)} disabled={saving}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `field-${fieldEditorIds.current[index] ?? `fallback-${index}`}`}><View style={styles.designerRow}><Field label="Código interno" hint="Se genera automáticamente a partir del nombre de la pregunta y lo utiliza el motor de reglas. No necesitas escribirlo." value={field.key} onChangeText={() => undefined} editable={false} /><Field label="Pregunta para el cliente" hint="Es la pregunta que verá la persona en el chatbot. Escríbela como se la dirías directamente." value={field.label} onChangeText={(label) => updateFieldLabel(index, label)} /><FieldTypeSelector value={field.type} onChange={(type) => updateField(index, { type, ...(type !== "choice" ? { depends_on: undefined, product_options: undefined } : {}) })} /></View><View style={styles.designerRow}>{field.type === "choice" ? <Field label="Opciones posibles" hint="Escribe las respuestas válidas separadas por comas. Ejemplo: gres, porcelánico, microcemento." value={field.options.join(", ")} onChangeText={(value) => updateField(index, { options: value.split(",").map((option) => option.trim()).filter(Boolean) })} /> : <View style={styles.field} />}{field.type === "number" ? <UnitSelector value={field.unit || "m²"} onChange={(unit) => updateField(index, { unit })} /> : <View style={styles.field} />}<Toggle label="Debe contestarse" hint="Si está activo, el chatbot preguntará por este dato antes de calcular el presupuesto." value={field.required} onPress={() => updateField(index, { required: !field.required })} /></View>{field.type === "color" ? <ColorConfigEditor field={field} onChange={(color_config) => updateField(index, { color_config })} /> : null}{field.type === "choice" ? <DependentOptionsEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice" || candidate.type === "boolean")} onChange={(depends_on) => updateField(index, { depends_on })} /> : null}<ProductOptionsEditor field={field} products={products} saving={saving} onChange={(product_options) => { const nextDraft = { ...draft, fields: draft.fields.map((currentField, fieldIndex) => fieldIndex === index ? { ...currentField, product_options } : currentField) }; markDesignerDirty(); setDraft(nextDraft); void save(`field-${index}`, nextDraft); }} /><VisibleWhenEditor field={field} candidates={draft.fields.slice(0, index).filter((candidate) => candidate.type === "choice" || candidate.type === "boolean")} onChange={(visible_when) => updateField(index, { visible_when })} /><View style={styles.designerRow}><Field label="Ejemplo" hint="Un valor ficticio que ayuda a entender qué debe escribir el cliente. No fija la respuesta." value={field.example ?? ""} onChangeText={(example) => updateField(index, { example: example || undefined })} /><Field label="Ayuda adicional" hint="Una explicación breve para aclarar la pregunta. Ejemplo: si no tienes el diseño, indícalo y lo prepara el equipo." value={field.help_text ?? ""} onChangeText={(help_text) => updateField(index, { help_text: help_text || undefined })} /></View>{field.example ? <Text style={styles.exampleHint}>Ejemplo visible: {field.example}</Text> : null}</AnimatedCollapse></Animated.View>)}
             </View><View style={fullScreen && designerSection !== "items" ? styles.hidden : null}><Text style={styles.sectionLabel}>Catálogo y conceptos facturables</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar conceptos por nombre o código…" /> : null}
             <View style={styles.blockPalette}>{[["Producto", "producto"], ["Material", "material"], ["Mano de obra", "mano de obra"], ["Extra", "extra"]].map(([label, category]) => <Pressable style={styles.paletteButton} key={category} onPress={() => addItem(category)}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {draft.items.map((item, index) => <Animated.View onLayout={(event) => { itemPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "item" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${item.name} ${item.sku} ${item.description ?? ""}`) ? styles.hidden : null]} key={`${item.sku}-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`item-${index}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `item-${index}` ? "▲" : "▼"}</Text><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`item-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `item-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `item-${index}`}><View style={styles.designerRow}><Field label="Concepto" hint="Nombre concreto que aparecerá en el presupuesto. Ejemplo: Baldosa de gres azul 50×50 cm." value={item.name} onChangeText={(name) => updateItemName(index, name)} /></View><Field label="Descripción" hint="Detalles que ayudan a la IA y pueden aparecer en el presupuesto. Ejemplo: acabado mate, apta para suelo de baño." value={item.description ?? ""} onChangeText={(description) => updateItem(index, { description: description || undefined })} multiline /><Text style={styles.fieldLabel}>Atributos del producto</Text><Text style={styles.listMeta}>Añade los datos que diferencian este producto: marca, modelo, color, medidas, acabado, etc.</Text>{readCatalogAttributes(item).map((attribute, attributeIndex) => <View style={styles.designerRow} key={`${index}-attribute-${attributeIndex}`}><Field label="Atributo" value={attribute.label} onChangeText={(label) => updateItemAttribute(index, attributeIndex, { label })} /><Field label="Valor" value={attribute.value} onChangeText={(value) => updateItemAttribute(index, attributeIndex, { value })} /><Pressable onPress={() => removeItemAttribute(index, attributeIndex)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View>)}<Pressable style={styles.smallButton} onPress={() => addItemAttribute(index)}><Text style={styles.smallButtonLabel}>＋ Añadir atributo</Text></Pressable><View style={styles.designerRow}><UnitSelector value={item.unit || "m²"} onChange={(unit) => updateItem(index, { unit })} /><Field label="Precio base" hint="Importe por cada unidad. Se muestra sin ceros innecesarios. Ejemplo: 22 €/m²." value={formatPriceInput(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: parsePriceInput(value) })} /></View></AnimatedCollapse></Animated.View>)}
+            {draft.items.map((item, index) => <Animated.View onLayout={(event) => { itemPositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "item" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${item.name} ${item.sku} ${item.description ?? ""}`) ? styles.hidden : null]} key={`item-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`item-${index}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `item-${index}` ? "▲" : "▼"}</Text><Text style={styles.blockTitle}>{item.name || "Concepto sin título"}</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`item-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `item-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeItem(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `item-${index}`}><View style={styles.designerRow}><Field label="Concepto" hint="Nombre concreto que aparecerá en el presupuesto. Ejemplo: Baldosa de gres azul 50×50 cm." value={item.name} onChangeText={(name) => updateItemName(index, name)} /></View><Field label="Descripción" hint="Detalles que ayudan a la IA y pueden aparecer en el presupuesto. Ejemplo: acabado mate, apta para suelo de baño." value={item.description ?? ""} onChangeText={(description) => updateItem(index, { description: description || undefined })} multiline /><Text style={styles.fieldLabel}>Atributos del producto</Text><Text style={styles.listMeta}>Añade los datos que diferencian este producto: marca, modelo, color, medidas, acabado, etc.</Text>{readCatalogAttributes(item).map((attribute, attributeIndex) => <View style={styles.designerRow} key={`${index}-attribute-${attributeIndex}`}><Field label="Atributo" value={attribute.label} onChangeText={(label) => updateItemAttribute(index, attributeIndex, { label })} /><Field label="Valor" value={attribute.value} onChangeText={(value) => updateItemAttribute(index, attributeIndex, { value })} /><Pressable onPress={() => removeItemAttribute(index, attributeIndex)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View>)}<Pressable style={styles.smallButton} onPress={() => addItemAttribute(index)}><Text style={styles.smallButtonLabel}>＋ Añadir atributo</Text></Pressable><View style={styles.designerRow}><UnitSelector value={item.unit || "m²"} onChange={(unit) => updateItem(index, { unit })} /><Field label="Precio base" hint="Importe por cada unidad. Se muestra sin ceros innecesarios. Ejemplo: 22 €/m²." value={formatPriceInput(item.base_price)} keyboardType="decimal-pad" onChangeText={(value) => updateItem(index, { base_price: parsePriceInput(value) })} /></View></AnimatedCollapse></Animated.View>)}
             </View><View style={fullScreen && designerSection !== "rules" ? styles.hidden : null}><Text style={styles.sectionLabel}>Reglas deterministas</Text>
             <Text style={styles.listMeta}>El LLM propone datos; estas reglas son las que podrán calcular el importe.</Text>
             {fullScreen ? <TextInput style={styles.designerFilterInput} value={designerSearch} onChangeText={setDesignerSearch} placeholder="Filtrar reglas por código o descripción…" /> : null}
             <View style={styles.blockPalette}>{[["Mínimo", "minimum"], ["Descuento", "factor"], ["Recargo", "surcharge"], ["Fórmula", "formula"]].map(([label, kind]) => <Pressable style={styles.paletteButton} key={kind} onPress={() => addRule(kind as BlueprintRule["kind"])}><Text style={styles.paletteLabel}>＋ {label}</Text></Pressable>)}</View>
-            {ruleCards.map((rule, index) => <Animated.View onLayout={(event) => { rulePositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "rule" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${rule.code} ${ruleSummary(rule, draft.fields, draft.items)}`) ? styles.hidden : null]} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`rule-${index}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `rule-${index}` ? "▲" : "▼"}</Text><Text style={styles.blockTitle}>{ruleSummary(rule, draft.fields, draft.items)}{rule.code ? ` - [${rule.code}]` : " - [Regla sin código]"}</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`rule-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `rule-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `rule-${index}`}><View style={styles.designerRow}><Field label="Código" hint="Identificador de la regla. Usa minúsculas y guiones bajos." placeholder="Ejemplo: floor_material_by_area" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><View style={styles.designerRow}><ReferenceSelector label="Campo de referencia" hint="Escoge la pregunta o variable que aporta la cantidad o condición de esta regla." value={ruleReferenceValue(rule, "field")} options={draft.fields.map((field) => ({ value: field.key, label: field.label }))} onChange={(value) => updateRuleReference(index, "field", value)} /><ReferenceSelector label="Concepto facturable" hint="Escoge el producto, material, mano de obra o extra que aplicará la regla." value={ruleReferenceValue(rule, "item")} options={draft.items.map((item) => ({ value: item.sku, label: item.name }))} onChange={(value) => updateRuleReference(index, "item", value)} /></View><Text style={styles.fieldLabel}>Detalle avanzado de la regla (JSON)</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></AnimatedCollapse></Animated.View>)}
+            {ruleCards.map((rule, index) => <Animated.View onLayout={(event) => { rulePositions.current[index] = event.nativeEvent.layout.y; }} style={[styles.blockCard, highlightTarget?.section === "rule" && highlightTarget.index === index ? { backgroundColor: highlightAnimation.interpolate({ inputRange: [0, 1], outputRange: ["#fbfdfb", "#fff2b8"] }) } : null, fullScreen && !matchesDesignerSearch(`${rule.code} ${ruleSummary(rule, draft.fields, draft.items)}`) ? styles.hidden : null]} key={`${rule.code}-${index}`}><View style={styles.blockHeader}><Pressable style={styles.blockToggle} onPress={() => toggleBlock(`rule-${index}`)}><Text style={styles.collapseIcon}>{expandedBlockKey === `rule-${index}` ? "▲" : "▼"}</Text><Text style={styles.blockTitle}>{ruleSummary(rule, draft.fields, draft.items)}{rule.code ? ` - [${rule.code}]` : " - [Regla sin código]"}</Text></Pressable><Pressable style={styles.blockSaveButton} onPress={() => void save(`rule-${index}`)} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === `rule-${index}` ? "Guardando…" : "Guardar"}</Text></Pressable><Pressable onPress={() => removeRule(index)}><Text style={styles.deleteLabel}>Eliminar</Text></Pressable></View><AnimatedCollapse expanded={expandedBlockKey === `rule-${index}`}><View style={styles.designerRow}><Field label="Código" hint="Identificador de la regla. Usa minúsculas y guiones bajos." placeholder="Ejemplo: floor_material_by_area" value={rule.code} onChangeText={(code) => updateRule(index, { code })} /><Field label="Tipo" value={rule.kind} onChangeText={(kind) => updateRule(index, { kind })} /><Field label="Prioridad" value={String(rule.priority)} keyboardType="number-pad" onChangeText={(value) => updateRule(index, { priority: Number(value) || 0 })} /></View><View style={styles.designerRow}><ReferenceSelector label="Campo de referencia" hint="Escoge la pregunta o variable que aporta la cantidad o condición de esta regla." value={ruleReferenceValue(rule, "field")} options={draft.fields.map((field) => ({ value: field.key, label: field.label }))} onChange={(value) => updateRuleReference(index, "field", value)} /><ReferenceSelector label="Concepto facturable" hint="Escoge el producto, material, mano de obra o extra que aplicará la regla." value={ruleReferenceValue(rule, "item")} options={[...draft.items.map((item) => ({ value: item.sku, label: item.name })), ...products.map((product) => ({ value: product.sku, label: `${product.name} · ${product.category_path.join(" / ")}` }))]} onChange={(value) => updateRuleReference(index, "item", value)} /></View><Text style={styles.fieldLabel}>Detalle avanzado de la regla (JSON)</Text><TextInput style={[styles.input, styles.ruleDetailInput]} value={rule.definitionText} onChangeText={(definitionText) => updateRule(index, { definitionText })} multiline /></AnimatedCollapse></Animated.View>)}
             </View><View style={fullScreen && designerSection !== "measures" ? styles.hidden : null}><View style={styles.sectionHeaderRow}><View style={styles.sectionHeaderContent}><Text style={styles.sectionLabel}>Medidas calculadas (JSON)</Text><Text style={styles.listMeta}>Úsalas solo para cantidades intermedias reutilizables, como una superficie con un 10 % de desperdicio. Para una relación directa como superficie × material no necesitas crear una medida.</Text></View></View>
             <TextInput style={[styles.input, styles.textArea, styles.codeInput]} value={measuresText} onChangeText={(value) => { markDesignerDirty(); setMeasuresText(value); }} multiline />
             <View style={styles.measureActions}><Pressable style={styles.blockSaveButton} onPress={() => void save("measures")} disabled={saving}><Text style={styles.blockSaveLabel}>{savingBlockKey === "measures" ? "Guardando…" : "Guardar"}</Text></Pressable></View>
-            {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
-            {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}</View>
+            </View>
           </ScrollView>
           <View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onOpenHelp} accessibilityRole="button" accessibilityLabel="Abrir ayuda del backoffice"><Text style={styles.secondaryLabel}>Ayuda del backoffice</Text></Pressable></View>
           {designerLoading ? <View style={styles.designerLoadingOverlay}><ActivityIndicator size="large" color="#258269" /><Text style={styles.designerLoadingText}>Cargando diseño…</Text></View> : null}
@@ -1856,7 +2116,7 @@ function emptyBlueprint(): ServiceBlueprint {
   return { fields: [], items: [], rules: [], measures: [] };
 }
 
-const SERVICE_CSV_HEADERS = ["service_slug", "record_type", "order", "code", "title", "content", "type", "options", "required", "unit", "min", "max", "example", "base_price", "currency", "priority", "rule_kind", "definition", "expression", "metadata", "depends_on", "visible_when", "product_options"];
+const SERVICE_CSV_HEADERS = ["service_slug", "record_type", "order", "code", "title", "content", "type", "options", "required", "unit", "min", "max", "example", "base_price", "currency", "priority", "rule_kind", "definition", "expression", "metadata", "depends_on", "visible_when", "product_options", "color_config"];
 
 function csvCell(value: unknown): string {
   if (value === undefined || value === null) return "";
@@ -1865,11 +2125,11 @@ function csvCell(value: unknown): string {
 }
 
 function serviceBlueprintToCsv(service: JobType, blueprint: ServiceBlueprint): string {
-  const rows: unknown[][] = [[service.slug, "service", "", "", service.name, service.description ?? "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]];
-  blueprint.fields.forEach((field, index) => rows.push([service.slug, "field", index + 1, field.key, field.label, field.help_text ?? "", field.type, field.options.join("|"), field.required, field.unit ?? "", field.min ?? "", field.max ?? "", field.example ?? "", "", "", "", "", "", "", "", field.depends_on ? JSON.stringify(field.depends_on) : "", field.visible_when ? JSON.stringify(field.visible_when) : "", field.product_options ? JSON.stringify(field.product_options) : ""]));
-  blueprint.items.forEach((item, index) => rows.push([service.slug, "item", index + 1, item.sku, item.name, item.description ?? "", "", "", "", item.unit, "", "", "", item.base_price ?? "", item.currency, "", "", "", "", JSON.stringify(item.metadata ?? {}), "", "", ""]));
-  blueprint.rules.forEach((rule, index) => rows.push([service.slug, "rule", index + 1, rule.code, "", "", "", "", "", "", "", "", "", "", "", rule.priority, rule.kind, JSON.stringify(rule.definition), "", "", "", "", ""]));
-  blueprint.measures.forEach((measure, index) => rows.push([service.slug, "measure", index + 1, measure.code, "", "", "", "", "", "", "", "", "", "", "", "", "", "", JSON.stringify(measure.expression), "", "", "", ""]));
+  const rows: unknown[][] = [[service.slug, "service", "", "", service.name, service.description ?? "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]];
+  blueprint.fields.forEach((field, index) => rows.push([service.slug, "field", index + 1, field.key, field.label, field.help_text ?? "", field.type, field.options.join("|"), field.required, field.unit ?? "", field.min ?? "", field.max ?? "", field.example ?? "", "", "", "", "", "", "", "", field.depends_on ? JSON.stringify(field.depends_on) : "", field.visible_when ? JSON.stringify(field.visible_when) : "", field.product_options ? JSON.stringify(field.product_options) : "", field.color_config ? JSON.stringify(field.color_config) : ""]));
+  blueprint.items.forEach((item, index) => rows.push([service.slug, "item", index + 1, item.sku, item.name, item.description ?? "", "", "", "", item.unit, "", "", "", item.base_price ?? "", item.currency, "", "", "", "", JSON.stringify(item.metadata ?? {}), "", "", "", ""]));
+  blueprint.rules.forEach((rule, index) => rows.push([service.slug, "rule", index + 1, rule.code, "", "", "", "", "", "", "", "", "", "", "", rule.priority, rule.kind, JSON.stringify(rule.definition), "", "", "", "", "", ""]));
+  blueprint.measures.forEach((measure, index) => rows.push([service.slug, "measure", index + 1, measure.code, "", "", "", "", "", "", "", "", "", "", "", "", "", "", JSON.stringify(measure.expression), "", "", "", "", ""]));
   return [SERVICE_CSV_HEADERS, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
@@ -1945,7 +2205,8 @@ const SERVICE_TEMPLATE_OPTIONS: Array<{ id: ServiceTemplate; label: string; desc
 
 function TemplateSelector({ onSelect, onReset }: { onSelect: (template: ServiceTemplate) => void; onReset: () => void }) {
   const [open, setOpen] = useState(false);
-  return <View style={[styles.templateSelectorWrap, open && styles.templateSelectorWrapOpen]}><Pressable style={styles.templateSelector} onPress={() => setOpen(!open)} accessibilityLabel="Seleccionar ayuda orientativa"><Text style={styles.templateSelectorLabel}>Cargar una ayuda orientativa</Text><Text style={styles.templateSelectorArrow}>{open ? "⌃" : "⌄"}</Text></Pressable>{open ? <View style={styles.templateMenu}><Pressable style={styles.templateResetOption} onPress={() => { onReset(); setOpen(false); }}><Text style={styles.templateOptionLabel}>Restablecer servicio</Text><Text style={styles.templateOptionDescription}>Recupera los patrones que tenía el servicio al abrirlo.</Text></Pressable>{SERVICE_TEMPLATE_OPTIONS.map((option) => <Pressable key={option.id} style={styles.templateOption} onPress={() => { onSelect(option.id); setOpen(false); }}><Text style={styles.templateOptionLabel}>{option.label}</Text><Text style={styles.templateOptionDescription}>{option.description}</Text></Pressable>)}</View> : null}</View>;
+  const anchorRef = useRef<any>(null);
+  return <View ref={anchorRef} style={[styles.templateSelectorWrap, open && styles.templateSelectorWrapOpen]}><Pressable style={styles.templateSelector} onPress={() => setOpen(!open)} accessibilityLabel="Seleccionar ayuda orientativa"><Text style={styles.templateSelectorLabel}>Cargar una ayuda orientativa</Text><Text style={styles.templateSelectorArrow}>{open ? "⌃" : "⌄"}</Text></Pressable><FloatingDropdown visible={open} anchorRef={anchorRef} onClose={() => setOpen(false)}><Pressable style={styles.templateResetOption} onPress={() => { onReset(); setOpen(false); }}><Text style={styles.templateOptionLabel}>Restablecer servicio</Text><Text style={styles.templateOptionDescription}>Recupera los patrones que tenía el servicio al abrirlo.</Text></Pressable>{SERVICE_TEMPLATE_OPTIONS.map((option) => <Pressable key={option.id} style={styles.templateOption} onPress={() => { onSelect(option.id); setOpen(false); }}><Text style={styles.templateOptionLabel}>{option.label}</Text><Text style={styles.templateOptionDescription}>{option.description}</Text></Pressable>)}</FloatingDropdown></View>;
 }
 
 function setDraftFromTemplate(template: ServiceTemplate, setDraft: (blueprint: ServiceBlueprint) => void, setRuleCards: (rules: EditableRule[]) => void, setMeasuresText: (value: string) => void) {
@@ -1956,7 +2217,7 @@ function setDraftFromTemplate(template: ServiceTemplate, setDraft: (blueprint: S
 }
 
 function exampleForType(type: string) {
-  return { text: "un valor escrito", number: "250", choice: "una opción", boolean: "sí", date: "31/12/2026", file: "una imagen o PDF" }[type] ?? "un valor de ejemplo";
+  return { text: "un valor escrito", number: "250", choice: "una opción", color: "Gris antracita · RAL 7016", boolean: "sí", date: "31/12/2026", file: "una imagen o PDF" }[type] ?? "un valor de ejemplo";
 }
 
 function starterBlueprint(fields: BlueprintField[], items: BlueprintItem[], rules: BlueprintRule[] = []): ServiceBlueprint {
@@ -2104,7 +2365,7 @@ function blueprintFor(template: ServiceTemplate): ServiceBlueprint {
   };
 }
 
-const FIELD_TYPE_LABELS: Record<string, string> = { text: "Texto", number: "Número", choice: "Opción", boolean: "Sí/No", date: "Fecha", file: "Imagen o archivo" };
+const FIELD_TYPE_LABELS: Record<string, string> = { text: "Texto", number: "Número", choice: "Opción", color: "Color", boolean: "Sí/No", date: "Fecha", file: "Imagen o archivo" };
 const UNIT_OPTIONS = ["m²", "m", "cm", "mm", "unidad", "hora", "día", "servicio", "kg", "g", "litro", "persona"];
 
 function InfoLabel({ label, hint }: { label: string; hint?: string }) {
@@ -2119,23 +2380,54 @@ function AnimatedCollapse({ expanded, children }: { expanded: boolean; children:
     Animated.timing(progress, { toValue: expanded ? 1 : 0, duration: 220, useNativeDriver: false }).start();
   }, [expanded, progress]);
 
-  return <Animated.View pointerEvents={expanded ? "auto" : "none"} style={[styles.collapsibleContent, { opacity: progress, maxHeight: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1200] }) }]}>{children}</Animated.View>;
+  return <Animated.View pointerEvents={expanded ? "auto" : "none"} style={[styles.collapsibleContent, styles.collapsibleOverflow, { opacity: progress, maxHeight: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 10000] }) }]}>{children}</Animated.View>;
 }
 
-function Field({ label, hint, value, onChangeText, keyboardType, multiline = false, editable = true, placeholder }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "decimal-pad" | "number-pad"; multiline?: boolean; editable?: boolean; placeholder?: string }) {
-  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea, !editable && styles.readonlyInput]} value={value} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} multiline={multiline} editable={editable} textAlignVertical={multiline ? "top" : "center"} /></View>;
+function FloatingDropdown({ visible, anchorRef, onClose, children }: { visible: boolean; anchorRef: RefObject<any>; onClose: () => void; children: ReactNode }) {
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 280 });
+  useEffect(() => {
+    if (!visible) return;
+    const measure = () => anchorRef.current?.measureInWindow?.((left: number, top: number, width: number, height: number) => {
+      setPosition({ top: top + height + 4, left, width: Math.max(width, 280) });
+    });
+    const timer = setTimeout(measure, 0);
+    return () => clearTimeout(timer);
+  }, [anchorRef, visible]);
+  if (!visible) return null;
+  return <Modal visible transparent animationType="none" onRequestClose={onClose}><View style={styles.floatingDropdownRoot}><Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} /><View style={[styles.floatingDropdown, { top: position.top, left: position.left, width: position.width }]}><ScrollView style={styles.floatingDropdownScroll} nestedScrollEnabled>{children}</ScrollView></View></View></Modal>;
+}
+
+function Field({ label, hint, value, onChangeText, keyboardType, multiline = false, editable = true, placeholder, autoCapitalize, secureTextEntry }: { label: string; hint?: string; value: string; onChangeText: (value: string) => void; keyboardType?: "default" | "email-address" | "decimal-pad" | "number-pad"; multiline?: boolean; editable?: boolean; placeholder?: string; autoCapitalize?: "none" | "sentences" | "words" | "characters"; secureTextEntry?: boolean }) {
+  return <View style={styles.field}><InfoLabel label={label} hint={hint} /><TextInput style={[styles.input, multiline && styles.textArea, !editable && styles.readonlyInput]} value={value} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} multiline={multiline} editable={editable} autoCapitalize={autoCapitalize} secureTextEntry={secureTextEntry} textAlignVertical={multiline ? "top" : "center"} /></View>;
 }
 
 function FieldTypeSelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const types = ["text", "number", "choice", "boolean", "date", "file"];
+  const types = ["text", "number", "choice", "color", "boolean", "date", "file"];
   const nextType = types[(types.indexOf(value) + 1) % types.length] ?? "text";
-  return <View style={styles.field}><InfoLabel label="Cómo responde" hint="Indica qué formato debe usar el cliente. Pulsa el selector para alternar entre texto, número, opción, sí/no, fecha o imagen." /><Pressable style={styles.typeSelector} onPress={() => onChange(nextType)}><Text style={styles.typeSelectorLabel}>{FIELD_TYPE_LABELS[value] ?? value}</Text><Text style={styles.typeSelectorHint}>Pulsa para cambiar</Text></Pressable></View>;
+  return <View style={styles.field}><InfoLabel label="Cómo responde" hint="Indica qué formato debe usar el cliente. Pulsa el selector para alternar entre texto, número, opción, color, sí/no, fecha o imagen." /><Pressable style={styles.typeSelector} onPress={() => onChange(nextType)}><Text style={styles.typeSelectorLabel}>{FIELD_TYPE_LABELS[value] ?? value}</Text><Text style={styles.typeSelectorHint}>Pulsa para cambiar</Text></Pressable></View>;
+}
+
+function ColorConfigEditor({ field, onChange }: { field: BlueprintField; onChange: (config: ColorConfig) => void }) {
+  const config = field.color_config ?? { source: "mixed", systems: ["RAL", "Pantone", "HEX", "RGB", "CMYK"], allow_custom: true };
+  const systems = ["RAL", "NCS", "Pantone", "CMYK", "HEX", "RGB"];
+  const sources: Array<{ value: NonNullable<ColorConfig["source"]>; label: string }> = [
+    { value: "product", label: "Colores del producto" },
+    { value: "tenant_palette", label: "Paleta del negocio" },
+    { value: "mixed", label: "Producto + paleta" },
+    { value: "free", label: "Código libre" },
+  ];
+  const toggleSystem = (system: string) => {
+    const next = config.systems?.includes(system) ? config.systems.filter((current) => current !== system) : [...(config.systems ?? []), system];
+    onChange({ ...config, systems: next });
+  };
+  return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Configuración de colores</Text><Text style={styles.dependencyHint}>El chatbot mostrará una paleta visual. El tenant decide qué sistemas de color puede escoger el cliente.</Text><Text style={styles.fieldLabel}>Origen de los colores</Text><View style={styles.blockPalette}>{sources.map((source) => <Pressable key={source.value} style={[styles.paletteButton, config.source === source.value ? { backgroundColor: "#d7eee3", borderColor: "#258269" } : null]} onPress={() => onChange({ ...config, source: source.value })}><Text style={styles.paletteLabel}>{source.label}</Text></Pressable>)}</View><Text style={styles.fieldLabel}>Sistemas admitidos</Text><View style={styles.blockPalette}>{systems.map((system) => <Pressable key={system} style={[styles.paletteButton, config.systems?.includes(system) ? { backgroundColor: "#d7eee3", borderColor: "#258269" } : null]} onPress={() => toggleSystem(system)}><Text style={styles.paletteLabel}>{system}</Text></Pressable>)}</View><Toggle label="Permitir color personalizado" hint="Permite introducir un color mediante HEX, RGB o CMYK aunque no esté en la paleta." value={Boolean(config.allow_custom)} onPress={() => onChange({ ...config, allow_custom: !config.allow_custom })} /></View>;
 }
 
 function UnitSelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
   const options = value && !UNIT_OPTIONS.includes(value) ? [value, ...UNIT_OPTIONS] : UNIT_OPTIONS;
-  return <View style={styles.field}><InfoLabel label="Unidad" hint="Selecciona cómo se cobra o mide este concepto. Por defecto se usa m²." /><Pressable style={styles.typeSelector} onPress={() => setOpen(!open)}><Text style={styles.typeSelectorLabel}>{value || "m²"}</Text><Text style={styles.typeSelectorHint}>{open ? "Cerrar" : "Seleccionar"}</Text></Pressable>{open ? <View style={styles.unitMenu}>{options.map((option) => <Pressable key={option} style={styles.unitOption} onPress={() => { onChange(option); setOpen(false); }}><Text style={styles.unitOptionLabel}>{option}</Text></Pressable>)}</View> : null}</View>;
+  const anchorRef = useRef<any>(null);
+  return <View ref={anchorRef} style={styles.field}><InfoLabel label="Unidad" hint="Selecciona cómo se cobra o mide este concepto. Por defecto se usa m²." /><Pressable style={styles.typeSelector} onPress={() => setOpen(!open)}><Text style={styles.typeSelectorLabel}>{value || "m²"}</Text><Text style={styles.typeSelectorHint}>{open ? "Cerrar" : "Seleccionar"}</Text></Pressable><FloatingDropdown visible={open} anchorRef={anchorRef} onClose={() => setOpen(false)}>{options.map((option) => <Pressable key={option} style={styles.unitOption} onPress={() => { onChange(option); setOpen(false); }}><Text style={styles.unitOptionLabel}>{option}</Text></Pressable>)}</FloatingDropdown></View>;
 }
 
 type ReferenceOption = { value: string; label: string };
@@ -2145,17 +2437,8 @@ function ReferenceSelector({ label, hint, value, options, onChange, showValue = 
   const [open, setOpen] = useState(false);
   const containerRef = useRef<any>(null);
   const selected = options.find((option) => option.value === value);
-  useEffect(() => {
-    if (!open || typeof document === "undefined") return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && !containerRef.current?.contains?.(target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-  }, [open]);
   const selectedLabel = selected ? (showValue && selected.value ? `${selected.value} — ${selected.label}` : selected.label) : options.length ? "Seleccionar una referencia" : "No hay opciones creadas";
-  return <View ref={containerRef} style={[styles.field, open && styles.referenceFieldOpen]}><InfoLabel label={label} hint={hint} /><Pressable style={[styles.typeSelector, !options.length && styles.readonlyInput]} onPress={() => { if (options.length) setOpen(!open); }} disabled={!options.length}><Text style={[styles.typeSelectorLabel, !selected && styles.selectorPlaceholder]}>{selectedLabel}</Text><Text style={styles.typeSelectorHint}>{options.length ? (open ? "Cerrar" : "Seleccionar") : ""}</Text></Pressable>{open ? <View style={styles.referenceMenu}>{options.map((option) => <Pressable key={option.value || "__empty__"} style={styles.referenceOption} onPress={() => { onChange(option.value); setOpen(false); }}>{showValue ? <Text style={styles.referenceOptionCode}>{option.value || "—"}</Text> : null}<Text style={styles.referenceOptionLabel}>{option.label}</Text></Pressable>)}</View> : null}</View>;
+  return <View ref={containerRef} style={[styles.field, open && styles.referenceFieldOpen]}><InfoLabel label={label} hint={hint} /><Pressable style={[styles.typeSelector, !options.length && styles.readonlyInput]} onPress={() => { if (options.length) setOpen(!open); }} disabled={!options.length}><Text style={[styles.typeSelectorLabel, !selected && styles.selectorPlaceholder]}>{selectedLabel}</Text><Text style={styles.typeSelectorHint}>{options.length ? (open ? "Cerrar" : "Seleccionar") : ""}</Text></Pressable><FloatingDropdown visible={open} anchorRef={containerRef} onClose={() => setOpen(false)}>{options.map((option) => <Pressable key={option.value || "__empty__"} style={styles.referenceOption} onPress={() => { onChange(option.value); setOpen(false); }}>{showValue ? <Text style={styles.referenceOptionCode}>{option.value || "—"}</Text> : null}<Text style={styles.referenceOptionLabel}>{option.label}</Text></Pressable>)}</FloatingDropdown></View>;
 }
 
 function DependentOptionsEditor({ field, candidates, onChange }: { field: BlueprintField; candidates: BlueprintField[]; onChange: (depends_on?: DependentOptions) => void }) {
@@ -2179,26 +2462,49 @@ function VisibleWhenEditor({ field, candidates, onChange }: { field: BlueprintFi
   const condition = field.visible_when;
   const controller = candidates.find((candidate) => candidate.key === condition?.field);
   const selectorOptions: ReferenceOption[] = [{ value: "", label: "Siempre visible" }, ...candidates.map((candidate) => ({ value: candidate.key, label: candidate.label }))];
-  const valueOptions: ReferenceOption[] = (controller?.options ?? []).map((option) => ({ value: option, label: option }));
+  const valueOptions: ReferenceOption[] = controller?.type === "boolean" ? [{ value: "true", label: "Sí" }, { value: "false", label: "No" }] : (controller?.options ?? []).map((option) => ({ value: option, label: option }));
   const selectController = (value: string) => {
     if (!value) { onChange(undefined); return; }
     const nextController = candidates.find((candidate) => candidate.key === value);
-    onChange({ field: value, equals: nextController?.options[0] ?? "" });
+    onChange({ field: value, equals: nextController?.type === "boolean" ? "true" : nextController?.options[0] ?? "" });
   };
-  return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Mostrar pregunta solo si…</Text><Text style={styles.dependencyHint}>Haz que esta pregunta aparezca únicamente cuando el cliente haya dado una respuesta concreta a una pregunta anterior. Ejemplo: pedir medidas solo si el formato es Personalizado.</Text>{candidates.length ? <ReferenceSelector label="Pregunta que controla" hint="Debe ser una pregunta anterior, normalmente de tipo Opción." value={condition?.field ?? ""} options={selectorOptions} onChange={selectController} /> : <Text style={styles.dependencyEmpty}>Añade primero la pregunta que debe controlar esta condición.</Text>}{controller ? <ReferenceSelector label="Respuesta que la activa" hint="La pregunta aparecerá cuando la respuesta coincida con este valor." value={condition?.equals ?? ""} options={valueOptions} onChange={(equals) => onChange({ field: controller.key, equals })} /> : null}</View>;
+  return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Mostrar pregunta solo si…</Text><Text style={styles.dependencyHint}>Haz que esta pregunta aparezca únicamente cuando el cliente haya dado una respuesta concreta a una pregunta anterior. Ejemplo: pedir medidas solo si el formato es Personalizado o pedir horas solo si responde Sí a un desmontaje.</Text>{candidates.length ? <ReferenceSelector label="Pregunta que controla" hint="Puede ser una pregunta de Opción o de tipo Sí/No." value={condition?.field ?? ""} options={selectorOptions} onChange={selectController} /> : <Text style={styles.dependencyEmpty}>Añade primero la pregunta que debe controlar esta condición.</Text>}{controller ? <ReferenceSelector label="Respuesta que la activa" hint="La pregunta aparecerá cuando la respuesta coincida con este valor." value={condition?.equals ?? ""} options={valueOptions} onChange={(equals) => onChange({ field: controller.key, equals })} /> : null}</View>;
 }
 
-function ProductOptionsEditor({ field, items, onChange }: { field: BlueprintField; items: BlueprintItem[]; onChange: (product_options?: Record<string, string[]>) => void }) {
-  const products = items.filter((item) => Boolean(item.metadata.catalog_product));
-  if (field.type !== "choice" || !products.length) return null;
-  const mappings = field.product_options ?? {};
-  const toggleProduct = (option: string, sku: string) => {
-    const selected = new Set(mappings[option] ?? []);
-    if (selected.has(sku)) selected.delete(sku); else selected.add(sku);
-    const next = { ...mappings, [option]: Array.from(selected) };
-    onChange(Object.fromEntries(Object.entries(next).filter(([, values]) => values.length)));
+function ProductOptionsEditor({ field, products, saving = false, onChange }: { field: BlueprintField; products: Product[]; saving?: boolean; onChange: (product_options?: Record<string, string[]>) => void }) {
+  const [categoryByOption, setCategoryByOption] = useState<Record<string, string>>({});
+  const [productByOption, setProductByOption] = useState<Record<string, string>>({});
+  const [localMappings, setLocalMappings] = useState<Record<string, string[]>>(field.product_options ?? {});
+  useEffect(() => {
+    setLocalMappings(field.product_options ?? {});
+  }, [field.key, field.product_options]);
+  if (field.type !== "choice") return null;
+  const mappings = localMappings;
+  const updateMappings = (nextMappings: Record<string, string[]>) => {
+    setLocalMappings(nextMappings);
+    onChange(Object.keys(nextMappings).length ? nextMappings : undefined);
   };
-  return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Productos disponibles por opción</Text><Text style={styles.dependencyHint}>Asocia uno o varios productos concretos a cada respuesta. El cliente podrá elegir el modelo en una galería antes de continuar.</Text>{field.options.map((option) => <View key={option} style={styles.productAssociationRow}><Text style={styles.fieldLabel}>Si responde «{option}»</Text><View style={styles.choiceOptions}>{products.map((product) => { const selected = (mappings[option] ?? []).includes(product.sku); return <Pressable key={product.sku} style={[styles.smallButton, selected && styles.primaryButton]} onPress={() => toggleProduct(option, product.sku)}><Text style={[styles.smallButtonLabel, selected && styles.primaryLabel]}>{selected ? "✓ " : ""}{product.name}</Text></Pressable>; })}</View></View>)}</View>;
+  const categoryPaths = Array.from(new Map(products.map((product) => {
+    const path = product.category_path.length ? product.category_path.join(" / ") : "Sin categoría";
+    return [path, path];
+  })).values()).sort((left, right) => left.localeCompare(right));
+  const productsFor = (category: string) => products.filter((product) => (product.category_path.length ? product.category_path.join(" / ") : "Sin categoría") === category);
+  const assigned = (option: string) => mappings[option] ?? [];
+  const assignProduct = (option: string) => {
+    const sku = productByOption[option];
+    if (!sku) return;
+    const selected = assigned(option);
+    if (selected.includes(sku)) return;
+    updateMappings({ ...mappings, [option]: [...selected, sku] });
+    setProductByOption((current) => ({ ...current, [option]: "" }));
+  };
+  const removeProduct = (option: string, sku: string) => {
+    const next = assigned(option).filter((currentSku) => currentSku !== sku);
+    const nextMappings = { ...mappings };
+    if (next.length) nextMappings[option] = next; else delete nextMappings[option];
+    updateMappings(nextMappings);
+  };
+  return <View style={styles.dependencyPanel}><Text style={styles.dependencyTitle}>Productos disponibles por opción</Text><Text style={styles.dependencyHint}>Los productos se gestionan en el catálogo general. Para cada opción, selecciona una categoría, después un producto y pulsa «Asignar». Puedes asociar varios modelos.</Text>{!products.length ? <Text style={styles.dependencyEmpty}>Todavía no hay productos en el catálogo. Crea primero uno desde el menú Productos.</Text> : field.options.map((option) => { const category = categoryByOption[option] ?? ""; const categoryProducts = productsFor(category); return <View key={option} style={styles.productAssociationRow}><Text style={styles.fieldLabel}>Si responde «{option}»</Text><View style={styles.designerRow}><ReferenceSelector label="Categoría" hint="Filtra los productos del catálogo por su categoría jerárquica." value={category} options={[{ value: "", label: "Selecciona una categoría" }, ...categoryPaths.map((path) => ({ value: path, label: path }))]} onChange={(value) => { setCategoryByOption((current) => ({ ...current, [option]: value })); setProductByOption((current) => ({ ...current, [option]: "" })); }} showValue={false} /><ReferenceSelector label="Producto" hint="Producto concreto que podrá escoger el cliente para esta opción." value={productByOption[option] ?? ""} options={[{ value: "", label: category ? "Selecciona un producto" : "Selecciona antes una categoría" }, ...categoryProducts.map((product) => ({ value: product.sku, label: product.name }))]} onChange={(value) => setProductByOption((current) => ({ ...current, [option]: value }))} showValue={false} /><Pressable style={styles.assignButton} onPress={() => assignProduct(option)} disabled={saving || !productByOption[option]}><Text style={styles.assignButtonLabel}>{saving ? "Guardando…" : "Asignar"}</Text></Pressable></View><View style={styles.assignedProducts}>{assigned(option).map((sku) => { const product = products.find((current) => current.sku === sku); return <View style={styles.assignedProduct} key={sku}><View style={styles.tableMain}><Text style={styles.listTitle}>{product?.name ?? sku}</Text><Text style={styles.listMeta}>{sku}{product?.category_path?.length ? ` · ${product.category_path.join(" / ")}` : ""}</Text></View><Pressable onPress={() => removeProduct(option, sku)} disabled={saving}><Text style={styles.deleteLabel}>Quitar</Text></Pressable></View>; })}</View></View>; })}</View>;
 }
 
 function DesignerSectionTabs({ value, onChange, counts }: { value: DesignerSection; onChange: (section: DesignerSection) => void; counts: Record<DesignerSection, number> }) {
@@ -2251,11 +2557,17 @@ function QuotesPage({ quotes, onStatus, saving }: { quotes: QuoteSummary[]; onSt
 }
 
 function screenTitle(screen: Screen) {
-  return { wizard: "Wizard", dashboard: "Dashboard", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", "bulk-services": "Creador masivo de servicios", requests: "Peticiones", quotes: "Presupuestos" }[screen];
+  return { wizard: "Wizard", dashboard: "Dashboard", company: "Empresa", knowledge: "Base de conocimiento", documentation: "Documentación", designer: "Diseñador de servicios", "bulk-services": "Creador masivo de servicios", products: "Productos", requests: "Peticiones", quotes: "Presupuestos" }[screen];
 }
 
 const styles = StyleSheet.create({
   shell: { flex: 1, flexDirection: "row", backgroundColor: "#f6f7f5" },
+  authShell: { flex: 1, minHeight: "100%", alignItems: "center", justifyContent: "center", backgroundColor: "#f6f7f5", padding: 24 },
+  authCard: { width: "100%", maxWidth: 440, backgroundColor: "#ffffff", borderRadius: 16, borderWidth: 1, borderColor: "#dbe6df", padding: 30, shadowColor: "#17332d", shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  authKicker: { color: "#258269", fontSize: 13, fontWeight: "900", letterSpacing: 2, marginBottom: 10 },
+  authTitle: { color: "#17332d", fontSize: 27, fontWeight: "900", marginBottom: 10 },
+  authText: { color: "#61746b", fontSize: 15, lineHeight: 22, marginBottom: 18 },
+  authLoading: { color: "#61746b", fontSize: 14, marginTop: 12 },
   sidebar: { width: 250, padding: 28, backgroundColor: "#17332d", minHeight: "100%" },
   brandLockup: { width: 194, height: 44, justifyContent: "center", overflow: "hidden", backgroundColor: "transparent" },
   brandImage: { width: 194, height: 36, backgroundColor: "transparent" },
@@ -2369,6 +2681,7 @@ const styles = StyleSheet.create({
   secondaryLabel: { color: "#285246", fontSize: 15, fontWeight: "900" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(23, 51, 45, 0.36)", alignItems: "center", justifyContent: "center", padding: 24 },
   modalCard: { width: "100%", maxWidth: 620, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  modalScrollContent: { paddingBottom: 8 },
   confirmCard: { width: "100%", maxWidth: 520, backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   alertCard: { width: "100%", maxWidth: 480, backgroundColor: "#ffffff", borderRadius: 16, padding: 26, alignItems: "center", shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 16 },
   alertIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#fdecea", alignItems: "center", justifyContent: "center", marginBottom: 12 },
@@ -2378,6 +2691,10 @@ const styles = StyleSheet.create({
   alertButton: { alignSelf: "stretch", backgroundColor: "#258269", borderRadius: 9, alignItems: "center", paddingVertical: 12, marginTop: 20 },
   confirmTitle: { color: "#17332d", fontSize: 20, fontWeight: "900", marginTop: 8 },
   confirmWarning: { color: "#a53d35", backgroundColor: "#fdecea", borderRadius: 8, padding: 12, marginTop: 14, fontSize: 13, fontWeight: "900" },
+  productImageEditor: { borderTopWidth: 1, borderTopColor: "#edf1ee", marginTop: 14, paddingTop: 14 },
+  productPreviewImage: { width: 180, height: 120, objectFit: "cover", borderRadius: 10, backgroundColor: "#eef3f0", marginTop: 8 },
+  productImagePlaceholder: { width: 180, height: 120, borderRadius: 10, backgroundColor: "#eef3f0", alignItems: "center", justifyContent: "center", marginTop: 8 },
+  productImageLabel: { color: "#526078", fontSize: 13, fontWeight: "900" },
   designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, position: "relative", overflow: "hidden" },
   designerScroll: { flexShrink: 1, maxHeight: 620 },
   designerLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255, 255, 255, 0.9)", borderRadius: 16, alignItems: "center", justifyContent: "center", zIndex: 40 },
@@ -2394,6 +2711,9 @@ const styles = StyleSheet.create({
   templateOption: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#edf1ee" },
   templateOptionLabel: { color: "#17332d", fontSize: 12, fontWeight: "900" },
   templateOptionDescription: { color: "#718078", fontSize: 11, lineHeight: 15, marginTop: 2 },
+  floatingDropdownRoot: { ...StyleSheet.absoluteFillObject, zIndex: 10000, elevation: 10000 },
+  floatingDropdown: { position: "absolute", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 30, overflow: "hidden" },
+  floatingDropdownScroll: { maxHeight: 300 },
   unitMenu: { position: "absolute", top: 56, left: 0, right: 0, backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#cbd8d1", borderRadius: 8, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, zIndex: 30 },
   unitOption: { paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#edf1ee" },
   unitOptionLabel: { color: "#17332d", fontSize: 13 },
@@ -2408,7 +2728,11 @@ const styles = StyleSheet.create({
   dependencyHint: { color: "#718078", fontSize: 12, lineHeight: 17, marginBottom: 6 },
   dependencyEmpty: { color: "#718078", fontSize: 12, paddingVertical: 6 },
   dependencyMappings: { borderLeftWidth: 2, borderLeftColor: "#d3e5d8", paddingLeft: 10, marginTop: 4 },
-  productAssociationRow: { borderLeftWidth: 2, borderLeftColor: "#d3e5d8", paddingLeft: 10, marginTop: 8, marginBottom: 4 },
+  productAssociationRow: { borderWidth: 1, borderColor: "#e6d48a", borderRadius: 10, backgroundColor: "#fff8d7", padding: 11, marginTop: 10, marginBottom: 6, shadowColor: "#8b741f", shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  assignedProducts: { marginTop: 6 },
+  assignedProduct: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: "#edf1ee", paddingVertical: 7, gap: 8 },
+  assignButton: { alignSelf: "flex-end", backgroundColor: "#258269", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
+  assignButtonLabel: { color: "#ffffff", fontSize: 12, fontWeight: "900" },
   choiceOptions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   blockPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
   paletteButton: { borderWidth: 1, borderColor: "#b7c8be", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "#f7fbf8" },
@@ -2423,6 +2747,7 @@ const styles = StyleSheet.create({
   blockToggle: { flexDirection: "row", alignItems: "center", flex: 1, minWidth: 0 },
   collapseIcon: { color: "#285246", fontSize: 16, fontWeight: "900", paddingHorizontal: 6 },
   collapsibleContent: { marginTop: 2 },
+  collapsibleOverflow: { overflow: "hidden" },
   blockSaveButton: { borderWidth: 1, borderColor: "#8fc6a9", borderRadius: 7, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: "#f0f8f2" },
   blockSaveLabel: { color: "#216c55", fontSize: 11, fontWeight: "900" },
   reorderLabel: { color: "#285246", fontSize: 18, fontWeight: "900", paddingHorizontal: 4 },
@@ -2471,6 +2796,7 @@ const styles = StyleSheet.create({
   statusOff: { color: "#9a6b27" },
   field: { flex: 1, marginBottom: 8 },
   fieldLabel: { color: "#52645b", fontSize: 12, fontWeight: "900", marginBottom: 4 },
+  fieldHint: { color: "#718078", fontSize: 12, lineHeight: 17, marginBottom: 6 },
   fieldHelp: { color: "#61736a", fontSize: 12, lineHeight: 18, marginTop: -2, marginBottom: 10 },
   sectionLabel: { color: "#17332d", fontSize: 15, fontWeight: "900", marginTop: 10, marginBottom: 10 },
   readonly: { color: "#17332d", fontSize: 16, paddingBottom: 18 },
