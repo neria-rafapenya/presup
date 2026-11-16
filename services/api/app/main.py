@@ -16,7 +16,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origins,
     allow_credentials=False,
-    allow_methods=["DELETE", "GET", "PATCH", "POST", "PUT"],
+    allow_methods=["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"],
     allow_headers=["Content-Type", "X-Customer-Session", "X-Backoffice-Session"],
 )
 app.include_router(backoffice_auth_router)
