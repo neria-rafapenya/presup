@@ -1,7 +1,7 @@
 # Horekia — Roadmap de producto y desarrollo
 
 Fecha: 11 de noviembre de 2026.
-Estado: Fase 1 validada para la base POC; desarrollo activo centrado en el backoffice.
+Estado: Fase 1 validada para la base POC y desplegada en el VPS; desarrollo activo centrado en el circuito operativo.
 Base: PROMPT_CODEX_presup.md, ajustado a las decisiones confirmadas en esta conversación.
 
 ## 1. Producto y modelo de entrega
@@ -44,16 +44,16 @@ El nombre presup se mantiene para el repositorio y la estructura de código; Hor
 
 ## 4. Fases y criterios de cierre
 
-### Cola posterior a la POC
+### Cola posterior al despliegue POC
 
 Queda expresamente pospuesto hasta validar el circuito actual:
 
-- Autenticación y usuarios del tenant.
+- Gestión multiusuario completa del tenant y recuperación de acceso.
 - Adjuntos e imágenes desde el chat público.
 - Generación y envío de PDF de presupuesto o proforma.
-- Correo y seguimiento de envíos.
-- Despliegue en el VPS del cliente y dominios.
-- Interpretación libre con Gemini en el chat público.
+- Correo y seguimiento de envíos de producción más allá de Resend POC.
+- Automatización de instalaciones en otros VPS y dominios de clientes.
+- Integración ERP y sincronización de catálogo.
 
 El asistente interno de documentación permanece separado del chatbot público y ya utiliza Gemini real.
 

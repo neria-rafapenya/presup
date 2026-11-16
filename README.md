@@ -12,7 +12,7 @@ Repositorio objetivo: https://github.com/neria-rafapenya/presup.git
 
 Directorio de trabajo: `/Users/rafa_penya/presup`. La preparación de `/Users/rafa_penya/Documents/Codex/2026-11-11/new-chat-2/presup` se ha incorporado sin copiar su `.git`. Se ha conservado el título del README original y el historial del repositorio destino (commit inicial `f9b793a`). El estado remoto no se ha consultado en esta revisión; no se han publicado cambios.
 
-La sesión actual puede escribir en `.git` para las operaciones locales necesarias. No se ha hecho push ni se han creado recursos remotos.
+La rama `fase-1/base` está publicada en GitHub. La POC remota está desplegada en el VPS separado de Cuinaria; las credenciales y el `.env` de producción no se versionan.
 
 El VPS de la POC mantiene Horekia separado de Cuinaria: se despliega en `/var/www/horekia/presup`, con `api.horekia.com`, `backoffice.horekia.com` y `app.horekia.com`; las credenciales permanecen fuera de Git.
 
@@ -24,6 +24,7 @@ El VPS de la POC mantiene Horekia separado de Cuinaria: se despliega en `/var/ww
 - [Roadmap](docs/roadmap.md)
 - [Modelo de datos de Fase 1](docs/modelo-datos-fase-1.md)
 - [Estado y validación de Fase 1](docs/fase-1.md)
+- [Despliegue de la POC](docs/despliegue-poc.md)
 
 ## Preparación del entorno
 
