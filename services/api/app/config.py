@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     )
     media_public_base_url: str = Field(default="http://localhost:8000/media", validation_alias="MEDIA_PUBLIC_BASE_URL")
     cors_origins_raw: str = Field(
-        default="http://localhost:8081,http://127.0.0.1:8081,http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173,https://horekia.com,https://www.horekia.com",
+        default="http://localhost:8081,http://127.0.0.1:8081,http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173,https://app.horekia.com,https://horekia.com,https://www.horekia.com",
         validation_alias="CORS_ORIGINS",
     )
     backoffice_master_email: str = Field(default="", validation_alias="BACKOFFICE_MASTER_EMAIL")
