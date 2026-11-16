@@ -562,6 +562,24 @@ export default function App() {
     }
   };
 
+  const uploadJobTypeImage = async (jobTypeId: string, file: File): Promise<JobType | null> => {
+    const form = new FormData();
+    form.append("file", file);
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api<JobType>(`/api/v1/backoffice/job-types/${jobTypeId}/image`, { method: "POST", body: form });
+      setServices((current) => current.map((service) => service.id === jobTypeId ? updated : service));
+      setDesignerService((current) => current?.id === jobTypeId ? { ...current, ...updated } : current);
+      return updated;
+    } catch {
+      setError("No se ha podido subir la imagen del servicio. Usa PNG, JPG, WEBP o SVG de hasta 5 MB.");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteProduct = async (productId: string) => {
     setSaving(true);
     setError(null);
@@ -760,7 +778,7 @@ export default function App() {
 
       {screen === "designer" ? (
         <View style={styles.designerWorkspace}>
-          {designerService ? <ServiceDesignerModal visible service={designerService} products={products} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} saving={saving} fullScreen /> : <DesignerServicePicker services={services} sectorPacks={sectorPacks} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onCreateSectorPack={createSectorPack} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
+          {designerService ? <ServiceDesignerModal visible service={designerService} products={products} onClose={closeDesigner} onOpenHelp={() => setHelpOpenRequest((current) => current + 1)} onLoad={loadBlueprint} onSave={saveBlueprint} onUploadImage={uploadJobTypeImage} saving={saving} fullScreen /> : <DesignerServicePicker services={services} sectorPacks={sectorPacks} page={designerPage} onPageChange={setDesignerPage} onCreate={createService} onCreateSectorPack={createSectorPack} onOpenBulk={() => navigate("bulk-services")} onDesign={(service) => openDesigner(service, "wizard")} onDelete={deleteService} saving={saving} />}
         </View>
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -1704,7 +1722,7 @@ function DeleteKnowledgeModal({ entry, onClose, onConfirm, saving }: { entry: Kn
   return <Modal visible={Boolean(entry)} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Eliminar entrada</Text><Pressable onPress={onClose} disabled={saving}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.confirmTitle}>{entry?.title}</Text><Text style={styles.wizardText}>{entry?.kind === "product" ? "Se archivará la entrada y también su partida de catálogo asociada." : "Se archivará esta entrada de la base de conocimiento."}</Text><Text style={styles.confirmWarning}>Esta acción no se puede deshacer desde el backoffice.</Text><View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose} disabled={saving}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.dangerButton} onPress={() => void onConfirm()} disabled={saving}><Text style={styles.primaryLabel}>{saving ? "Eliminando…" : "Sí, eliminar"}</Text></Pressable></View></View></View></Modal>;
 }
 
-function ServiceImagePicker({ file, onChange }: { file: File | null; onChange: (file: File | null) => void }) {
+function ServiceImagePicker({ file, currentUrl, onChange }: { file: File | null; currentUrl?: string | null; onChange: (file: File | null) => void }) {
   const inputRef = useRef<any>(null);
   const openPicker = () => {
     if (Platform.OS === "web") inputRef.current?.click();
@@ -1712,6 +1730,7 @@ function ServiceImagePicker({ file, onChange }: { file: File | null; onChange: (
   return <View style={styles.field}>
     <InfoLabel label="Imagen ilustrativa" hint="Icono que se mostrará junto al servicio en el website público. Puedes subir PNG, JPG, WEBP o SVG, hasta 5 MB." />
     {Platform.OS === "web" ? createElement("input", { ref: inputRef, type: "file", accept: "image/png,image/jpeg,image/webp,image/svg+xml", style: { display: "none" }, onChange: (event: { target?: { files?: FileList | null } }) => onChange(event.target?.files?.[0] ?? null) }) : null}
+    {currentUrl ? <View style={styles.serviceImagePreview}><Text style={styles.listMeta}>Imagen actual</Text>{Platform.OS === "web" ? createElement("img", { src: currentUrl, alt: "Imagen del servicio", style: styles.servicePreviewImage }) : null}</View> : null}
     <Pressable style={styles.secondaryButton} onPress={openPicker} disabled={Platform.OS !== "web"}>
       <Text style={styles.secondaryLabel}>{file ? "Cambiar imagen" : "Seleccionar imagen"}</Text>
     </Pressable>
@@ -1782,7 +1801,7 @@ function SectorPackModal({ visible, onClose, onCreate, saving }: { visible: bool
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><View style={styles.modalHeader}><Text style={styles.panelTitle}>Nuevo tipo de servicio</Text><Pressable onPress={onClose}><Text style={styles.modalClose}>×</Text></Pressable></View><Text style={styles.wizardText}>Crea una categoría superior para agrupar servicios del negocio.</Text><View style={styles.formGrid}><Field label="Nombre" hint="Ejemplo: Imprenta, Taller de coches o Empresa de reformas." value={draft.name} onChangeText={(name) => setDraft({ ...draft, name, slug: slugify(name) })} /><Field label="Slug automático" value={draft.slug} editable={false} onChangeText={() => undefined} /></View><Field label="Descripción" value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} />{validationError ? <Text style={styles.error}>{validationError}</Text> : null}<View style={styles.wizardActions}><Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryLabel}>Cancelar</Text></Pressable><Pressable style={styles.primaryButton} onPress={() => void submit()} disabled={saving || !draft.name.trim() || !draft.slug}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Crear tipo"}</Text></Pressable></View></View></View></Modal>;
 }
 
-function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp, onLoad, onSave, saving, fullScreen = false }: { visible: boolean; service: JobType; products: Product[]; onClose: () => void; onOpenHelp: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; saving: boolean; fullScreen?: boolean }) {
+function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp, onLoad, onSave, onUploadImage, saving, fullScreen = false }: { visible: boolean; service: JobType; products: Product[]; onClose: () => void; onOpenHelp: () => void; onLoad: (jobTypeId: string) => Promise<ServiceBlueprint | null>; onSave: (jobTypeId: string, blueprint: ServiceBlueprint) => Promise<boolean>; onUploadImage: (jobTypeId: string, file: File) => Promise<JobType | null>; saving: boolean; fullScreen?: boolean }) {
   const [draft, setDraft] = useState<ServiceBlueprint>(emptyBlueprint());
   const [ruleCards, setRuleCards] = useState<EditableRule[]>([]);
   const [measuresText, setMeasuresText] = useState("[]");
@@ -1793,6 +1812,8 @@ function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp,
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [expandedBlockKey, setExpandedBlockKey] = useState<string | null>(null);
   const [designerLoading, setDesignerLoading] = useState(false);
+  const [serviceImageFile, setServiceImageFile] = useState<File | null>(null);
+  const [serviceImageMessage, setServiceImageMessage] = useState<string | null>(null);
   const [designerSection, setDesignerSection] = useState<DesignerSection>("fields");
   const [designerSearch, setDesignerSearch] = useState("");
   const [draggedBlock, setDraggedBlock] = useState<{ section: DesignerDragSection; index: number } | null>(null);
@@ -1827,6 +1848,8 @@ function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp,
     setExpandedBlockKey(null);
     setDesignerSection("fields");
     setDesignerSearch("");
+    setServiceImageFile(null);
+    setServiceImageMessage(null);
     void onLoad(service.id).then((next) => {
       const blueprint = next ?? emptyBlueprint();
       const normalizedBlueprint = { ...blueprint, fields: blueprint.fields ?? [], items: blueprint.items ?? [], rules: blueprint.rules ?? [], measures: blueprint.measures ?? [] };
@@ -1875,6 +1898,14 @@ function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp,
   };
 
   const markDesignerDirty = () => { setDesignerDirty(true); setSaveMessage(null); };
+  const saveServiceImage = async () => {
+    if (!serviceImageFile) return;
+    const updated = await onUploadImage(service.id, serviceImageFile);
+    if (updated) {
+      setServiceImageFile(null);
+      setServiceImageMessage("Imagen del servicio guardada.");
+    }
+  };
   const updateField = (index: number, patch: Partial<BlueprintField>) => { markDesignerDirty(); setDraft({ ...draft, fields: draft.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) }); };
   const updateItem = (index: number, patch: Partial<BlueprintItem>) => {
     markDesignerDirty();
@@ -2090,6 +2121,7 @@ function ServiceDesignerModal({ visible, service, products, onClose, onOpenHelp,
   const designerPanel = (
         <View style={[styles.designerCard, fullScreen && styles.designerFullScreenCard]}>
           <View style={styles.modalHeader}><View><Text style={styles.designerContextTitle}>DISEÑAR SERVICIO</Text><Text style={styles.designerServiceName}>{service.name}</Text></View><Pressable style={styles.secondaryButton} onPress={exportService}><Text style={styles.secondaryLabel}>Exportar CSV</Text></Pressable></View>
+          <View style={styles.serviceImagePanel}><View style={styles.serviceImagePanelCopy}><Text style={styles.sectionLabel}>Imagen del servicio</Text><Text style={styles.listMeta}>Se asocia al servicio completo y se mostrará en el listado público. No pertenece a ningún patrón.</Text><ServiceImagePicker file={serviceImageFile} currentUrl={service.image_url} onChange={(file) => { setServiceImageFile(file); setServiceImageMessage(null); }} />{serviceImageMessage ? <Text style={styles.success}>{serviceImageMessage}</Text> : null}</View><Pressable style={styles.primaryButton} onPress={() => void saveServiceImage()} disabled={saving || !serviceImageFile}><Text style={styles.primaryLabel}>{saving ? "Guardando…" : "Guardar imagen"}</Text></Pressable></View>
           {fullScreen ? <DesignerSectionTabs value={designerSection} onChange={selectDesignerSection} counts={{ fields: draft.fields.length, items: draft.items.length, rules: ruleCards.length, measures: draft.measures.length }} /> : null}
           {designerError ? <Text style={styles.error}>{designerError}</Text> : null}
           {saveMessage ? <Text style={styles.success}>{saveMessage}</Text> : null}
@@ -2723,6 +2755,10 @@ const styles = StyleSheet.create({
   productPreviewImage: { width: 180, height: 120, objectFit: "cover", borderRadius: 10, backgroundColor: "#eef3f0", marginTop: 8 },
   productImagePlaceholder: { width: 180, height: 120, borderRadius: 10, backgroundColor: "#eef3f0", alignItems: "center", justifyContent: "center", marginTop: 8 },
   productImageLabel: { color: "#526078", fontSize: 13, fontWeight: "900" },
+  serviceImagePanel: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 18, backgroundColor: "#f7faf8", borderWidth: 1, borderColor: "#dbe6df", borderRadius: 12, padding: 16, marginBottom: 16 },
+  serviceImagePanelCopy: { flex: 1 },
+  serviceImagePreview: { marginTop: 8 },
+  servicePreviewImage: { width: 110, height: 72, objectFit: "contain", borderRadius: 8, backgroundColor: "#eef3f0", marginTop: 5 },
   designerCard: { width: "100%", maxWidth: 1100, maxHeight: "92%", backgroundColor: "#ffffff", borderRadius: 16, padding: 24, shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, position: "relative", overflow: "hidden" },
   designerScroll: { flexShrink: 1, maxHeight: 620 },
   designerLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255, 255, 255, 0.9)", borderRadius: 16, alignItems: "center", justifyContent: "center", zIndex: 40 },
