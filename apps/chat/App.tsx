@@ -424,7 +424,7 @@ export default function App() {
 
   return <View style={[styles.shell, Platform.OS === "web" ? latoRootStyle : null]}>
     <StatusBar style="dark" />
-    <View pointerEvents="none" style={styles.demoRibbon}><Text style={styles.demoRibbonText}>DEMO{`\n`}orientada a pintura decorativa</Text></View>
+    <View pointerEvents="none" style={[styles.demoRibbon, { top: 54, left: -4, width: 330 }]}><Text style={[styles.demoRibbonText, { fontSize: 10, lineHeight: 13, letterSpacing: 0.35 }]}>DEMO{`\n`}orientada a pintura decorativa</Text></View>
     <ScrollView contentContainerStyle={styles.page}>
     <View style={[styles.header, { alignItems: "center" }]}><View style={styles.headerBrand}>{Platform.OS === "web" ? createElement("img", { src: "/horekia-logo-app-new.svg?v=1", alt: "HorekIA", style: styles.brandImage }) : <Text style={styles.brand}>HOREKIA</Text>}</View><View style={styles.headerRight}><Text style={styles.headerHint}>Prepara tu presupuesto paso a paso</Text><Pressable style={styles.accountLink} onPress={() => sessionToken ? navigateAccount(!accountOpen) : (setLoginError(null), setLoginOpen(true))}><Text style={styles.accountLinkLabel}>{sessionToken ? (accountOpen ? "Volver" : "Mi cuenta") : "Acceder"}</Text></Pressable>{sessionToken ? <Pressable style={styles.logoutLink} onPress={() => void logout()}><Text style={styles.logoutLabel}>Salir</Text></Pressable> : null}</View></View>
       <View style={styles.card}>
