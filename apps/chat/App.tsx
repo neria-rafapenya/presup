@@ -16,9 +16,51 @@ type CustomerAccount = { customer: { id: string; name: string; email: string; ph
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const TENANT_SLUG = process.env.EXPO_PUBLIC_TENANT_SLUG ?? "empresa-demo-uno";
+const RECAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_RECAPTCHA_SITE_KEY ?? "";
 const CUSTOMER_SESSION_STORAGE_KEY = "horekia.customer.session";
 const latoRootStyle = { fontFamily: "Lato", fontSize: 15 } as any;
 const DEMO_FAQ_URL = "https://www.horekia.com/#preguntas";
+
+type RecaptchaEnterprise = {
+  ready: (callback: () => void) => void;
+  execute: (siteKey: string, options: { action: string }) => Promise<string>;
+};
+
+let recaptchaScriptPromise: Promise<void> | null = null;
+
+function loadRecaptchaScript(): Promise<void> {
+  if (Platform.OS !== "web" || !RECAPTCHA_SITE_KEY || typeof document === "undefined") return Promise.resolve();
+  if (typeof window !== "undefined" && (window as typeof window & { grecaptcha?: { enterprise?: RecaptchaEnterprise } }).grecaptcha?.enterprise) return Promise.resolve();
+  if (recaptchaScriptPromise) return recaptchaScriptPromise;
+  recaptchaScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-horekia-recaptcha="enterprise"]') as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("No se ha podido cargar reCAPTCHA")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = `https://www.google.com/recaptcha/enterprise.js?render=${encodeURIComponent(RECAPTCHA_SITE_KEY)}`;
+    script.async = true;
+    script.dataset.horekiaRecaptcha = "enterprise";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("No se ha podido cargar reCAPTCHA"));
+    document.head.appendChild(script);
+  });
+  return recaptchaScriptPromise;
+}
+
+async function getRecaptchaToken(action: string): Promise<string | null> {
+  if (!RECAPTCHA_SITE_KEY) return null;
+  await loadRecaptchaScript();
+  const grecaptcha = typeof window !== "undefined" ? (window as typeof window & { grecaptcha?: { enterprise?: RecaptchaEnterprise } }).grecaptcha : undefined;
+  if (!grecaptcha?.enterprise) throw new Error("reCAPTCHA todavía no está disponible. Inténtalo de nuevo.");
+  return new Promise((resolve, reject) => {
+    grecaptcha.enterprise?.ready(() => {
+      void grecaptcha.enterprise?.execute(RECAPTCHA_SITE_KEY, { action }).then(resolve).catch(reject);
+    });
+  });
+}
 
 function openDemoFaq(): void {
   if (typeof window !== "undefined") window.open(DEMO_FAQ_URL, "_blank", "noopener,noreferrer");
@@ -271,6 +313,8 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => { void loadRecaptchaScript().catch(() => undefined); }, []);
+
   useEffect(() => { void loadServices(); }, []);
 
   useEffect(() => {
@@ -373,9 +417,11 @@ export default function App() {
     if (!service) return;
     if (!activeSession && (!customerName.trim() || customerName.trim().length < 2)) { setError("Escribe tu nombre para continuar."); return; }
     if (!activeSession && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(customerEmail.trim())) { setError("Escribe un email válido para continuar."); return; }
+    let recaptchaToken: string | null = null;
+    try { recaptchaToken = await getRecaptchaToken("start_quote"); } catch (recaptchaError) { setError(recaptchaError instanceof Error ? recaptchaError.message : "No se ha podido validar la solicitud."); return; }
     setConversationClosed(false); setRequestId(null); setMessages([]); setQuoteAvailable(false); setEmailSent(false); setEmailFailed(false); setActiveField(null); setDraft(""); setSending(true); setError(null);
     try {
-      const result = await api<{ request_id: string; message: { body: string }; field?: ActiveField | null }>(`/api/v1/public/tenants/${encodeURIComponent(TENANT_SLUG)}/conversations`, { method: "POST", body: JSON.stringify({ job_type_slug: service.slug, ...(activeSession ? { session_token: activeSession } : { customer_name: customerName.trim(), customer_email: customerEmail.trim() }) }) });
+      const result = await api<{ request_id: string; message: { body: string }; field?: ActiveField | null }>(`/api/v1/public/tenants/${encodeURIComponent(TENANT_SLUG)}/conversations`, { method: "POST", body: JSON.stringify({ job_type_slug: service.slug, recaptcha_token: recaptchaToken, ...(activeSession ? { session_token: activeSession } : { customer_name: customerName.trim(), customer_email: customerEmail.trim() }) }) });
       setRequestId(result.request_id); setMessages([{ sender: "assistant", body: result.message.body }]); setActiveField(result.field ?? null);
     } catch (requestError) {
       if (activeSession) {
@@ -410,9 +456,11 @@ export default function App() {
     if (!requestId) return;
     if (accountPassword.length < 8) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
     if (accountPassword !== accountPasswordConfirmation) { setError("Las contraseñas no coinciden."); return; }
+    let recaptchaToken: string | null = null;
+    try { recaptchaToken = await getRecaptchaToken("complete_account"); } catch (recaptchaError) { setError(recaptchaError instanceof Error ? recaptchaError.message : "No se ha podido validar la cuenta."); return; }
     setCompletingAccount(true); setError(null);
     try {
-      const result = await api<AccountResponse>(`/api/v1/public/conversations/${requestId}/account`, { method: "POST", body: JSON.stringify({ password: accountPassword, password_confirmation: accountPasswordConfirmation }) });
+      const result = await api<AccountResponse>(`/api/v1/public/conversations/${requestId}/account`, { method: "POST", body: JSON.stringify({ password: accountPassword, password_confirmation: accountPasswordConfirmation, recaptcha_token: recaptchaToken }) });
       setSessionToken(result.session_token); storeCustomerSession(result.session_token); setEmailSent(result.email_sent); setQuoteAvailable(false); setAccountPassword(""); setAccountPasswordConfirmation("");
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No se ha podido activar la cuenta."); }
     finally { setCompletingAccount(false); }

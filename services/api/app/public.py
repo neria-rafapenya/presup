@@ -1,8 +1,8 @@
 """Public tenant chat API, deliberately separate from the backoffice help chat."""
 
 import base64
-from decimal import Decimal
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import hashlib
 import hmac
 import json
@@ -15,8 +15,8 @@ import urllib.error
 import urllib.request
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
 import certifi
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -26,6 +26,7 @@ from .db import POC_TENANT_ID, db_session
 from .email import EmailDeliveryError, send_contact_email, send_quote_email
 from .geo import CITY_COORDINATES, COVERAGE_FIELD, COVERAGE_FIELD_KEY, check_service_coverage
 from .pdf import build_quote_pdf
+from .recaptcha import RecaptchaVerificationError, assess_token
 
 router = APIRouter(prefix="/api/v1/public", tags=["public-chat"])
 
@@ -36,6 +37,7 @@ class ConversationStart(BaseModel):
     customer_email: str | None = Field(default=None, min_length=5, max_length=240)
     customer_phone: str | None = Field(default=None, max_length=80)
     session_token: str | None = Field(default=None, min_length=20, max_length=240)
+    recaptcha_token: str | None = Field(default=None, max_length=10000)
 
     @model_validator(mode="after")
     def require_contact_or_session(self) -> "ConversationStart":
@@ -63,6 +65,7 @@ class ConversationStart(BaseModel):
 class CustomerAccountComplete(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     password_confirmation: str = Field(min_length=8, max_length=128)
+    recaptcha_token: str | None = Field(default=None, max_length=10000)
 
 
 class CustomerLogin(BaseModel):
@@ -1401,7 +1404,18 @@ def delete_customer_quote(tenant_slug: str, quote_id: UUID, customer_session: st
 
 
 @router.post("/tenants/{tenant_slug}/conversations", status_code=status.HTTP_201_CREATED)
-def start_conversation(tenant_slug: str, payload: ConversationStart, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+def start_conversation(tenant_slug: str, payload: ConversationStart, http_request: Request, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+    if not payload.session_token:
+        try:
+            assess_token(
+                settings,
+                token=payload.recaptcha_token or "",
+                expected_action="start_quote",
+                user_agent=http_request.headers.get("user-agent"),
+                user_ip=http_request.client.host if http_request.client else None,
+            )
+        except RecaptchaVerificationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     with db_session(settings) as conn:
         tenant, service = _tenant_and_service(conn, tenant_slug, payload.job_type_slug)
         customer = _customer_for_session(conn, tenant["id"], payload.session_token)
@@ -1425,11 +1439,21 @@ def start_conversation(tenant_slug: str, payload: ConversationStart, settings: S
 
 
 @router.post("/conversations/{request_id}/account")
-def complete_customer_account(request_id: UUID, payload: CustomerAccountComplete, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
+def complete_customer_account(request_id: UUID, payload: CustomerAccountComplete, http_request: Request, settings: Settings = Depends(get_settings)) -> dict[str, Any]:  # noqa: B008
     """Finish the customer account after the deterministic quote is prepared."""
 
     if payload.password != payload.password_confirmation:
         raise HTTPException(status_code=422, detail="Las contraseñas no coinciden")
+    try:
+        assess_token(
+            settings,
+            token=payload.recaptcha_token or "",
+            expected_action="complete_account",
+            user_agent=http_request.headers.get("user-agent"),
+            user_ip=http_request.client.host if http_request.client else None,
+        )
+    except RecaptchaVerificationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     with db_session(settings) as conn:
         request = conn.execute(
             "select id, customer_id, job_type_id, status from public.horekia_requests where tenant_id = %s and id = %s",

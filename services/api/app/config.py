@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     resend_api_key: str = Field(default="", validation_alias="RESEND_API_KEY")
     resend_from_email: str = Field(default="", validation_alias="RESEND_FROM_EMAIL")
     resend_from_name: str = Field(default="Horekia", validation_alias="RESEND_FROM_NAME")
+    recaptcha_project_id: str = Field(default="", validation_alias="RECAPTCHA_PROJECT_ID")
+    recaptcha_site_key: str = Field(default="", validation_alias="RECAPTCHA_SITE_KEY")
+    recaptcha_api_key: str = Field(default="", validation_alias="RECAPTCHA_API_KEY")
+    recaptcha_min_score: float = Field(default=0.5, validation_alias="RECAPTCHA_MIN_SCORE")
     product_upload_dir: str = Field(
         default=str(Path(__file__).resolve().parents[1] / "uploads" / "products"),
         validation_alias="PRODUCT_UPLOAD_DIR",
@@ -55,13 +59,17 @@ class Settings(BaseSettings):
         return bool(self.resend_api_key and self.resend_from_email)
 
     @property
+    def recaptcha_configured(self) -> bool:
+        return bool(self.recaptcha_project_id and self.recaptcha_site_key and self.recaptcha_api_key)
+
+    @property
     def cors_origins(self) -> list[str]:
         return [origin.strip().rstrip("/") for origin in self.cors_origins_raw.split(",") if origin.strip()]
 
     def public_summary(self) -> dict[str, bool]:
         """Return non-sensitive state suitable for diagnostics and tests."""
 
-        return {"ai_mock": self.ai_mock, "database_configured": self.database_configured, "email_configured": self.email_configured}
+        return {"ai_mock": self.ai_mock, "database_configured": self.database_configured, "email_configured": self.email_configured, "recaptcha_configured": self.recaptcha_configured}
 
 
 @lru_cache
