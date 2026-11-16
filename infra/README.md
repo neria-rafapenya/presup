@@ -8,6 +8,7 @@ El despliegue actual mantiene Cuinaria intacta y publica Horekia en un subdirect
 
 - `backoffice.horekia.com` → `apps/backoffice/dist`
 - `app.horekia.com` → `apps/chat/dist`
+- `horekia.com` y `www.horekia.com` → `apps/commercial/dist`
 - `api.horekia.com` → `127.0.0.1:8010`
 
 Los archivos de referencia son `ecosystem.horekia.config.cjs` y `Caddyfile.horekia`. El `.env` de producción queda únicamente en el VPS con permisos `600`; nunca se copia al repositorio ni se incluye en una imagen. El usuario maestro se crea con `scripts/bootstrap_backoffice.py` después de aplicar la migración `0019_backoffice_auth.sql`.

@@ -9,9 +9,11 @@
   "scripts": {
     "dev:backoffice": "yarn workspace @horekia/backoffice start",
     "dev:chat": "yarn workspace @horekia/chat start",
+    "dev:commercial": "yarn workspace @horekia/commercial dev",
     "dev:api": "./scripts/run_api.sh",
     "web:backoffice": "yarn workspace @horekia/backoffice web",
     "web:chat": "yarn workspace @horekia/chat web",
+    "build:commercial": "yarn workspace @horekia/commercial build",
     "typecheck": "yarn workspaces foreach -A run typecheck",
     "validate:config": "python3 scripts/validate_config.py"
   }

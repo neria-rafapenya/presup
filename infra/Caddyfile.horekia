@@ -10,6 +10,20 @@ api.horekia.com {
     reverse_proxy 127.0.0.1:8010
 }
 
+horekia.com, www.horekia.com {
+    encode zstd gzip
+    root * /var/www/horekia/presup/apps/commercial/dist
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-cache"
+    }
+    try_files {path} /index.html
+    file_server
+}
+
 backoffice.horekia.com {
     encode zstd gzip
     root * /var/www/horekia/presup/apps/backoffice/dist
