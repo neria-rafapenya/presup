@@ -14,7 +14,7 @@
 
 | Herramienta | Objetivo de Fase 1 | Estado observado |
 | --- | --- | --- |
-| Python | 3.13.x | 3.13.14 disponible |
+| Python | 3.12–3.13 | 3.13.14 local; 3.12.3 en el VPS |
 | Node | 20 LTS | 25.2.1 activo; no adoptado como objetivo |
 | Yarn | 4.14.1 | 4.14.1 disponible |
 | Expo | SDK 54 | declarado en ambas apps; instalación pendiente |
