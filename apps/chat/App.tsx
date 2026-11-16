@@ -501,7 +501,7 @@ export default function App() {
           </> : null}
         </>}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-      </View><Text style={styles.footer}>HorekIA · Conversación de solicitud de presupuesto</Text>
+      </View><Text style={styles.footer}>HorekIA · Conversación de solicitud de presupuesto</Text><Pressable onPress={() => { if (typeof window !== "undefined") window.open("https://www.horekia.com", "_blank", "noopener,noreferrer"); }}><Text style={{ color: "#258269", fontSize: 12, fontWeight: "900", textAlign: "center", marginTop: 6 }}>Visita horekia.com</Text></Pressable>
     <CustomerLoginModal visible={loginOpen} email={loginEmail} password={loginPassword} loading={loginLoading} error={loginError} onEmailChange={setLoginEmail} onPasswordChange={setLoginPassword} onSubmit={() => void login()} onClose={() => setLoginOpen(false)} />
     </ScrollView>
   </View>;
